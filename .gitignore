@@ -1,0 +1,5 @@
+# deploy.ps1 が使う「前回 Apps Script に反映した内容」の記録
+.last-gas-deploy
+# clasp のログイン情報（念のため）
+.clasprc.json
+node_modules/
