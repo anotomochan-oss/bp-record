@@ -24,6 +24,7 @@
     --danger-bg: #fce8e6; --danger: #c5221f; --danger-mark: #d93025;
     --shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 4px 14px rgba(0, 0, 0, .05);
     --hm-ok: #bfe3c8; --hm-warn: #fbd47e; --hm-danger: #f5a8a1;
+    --sk-base: #e6e9ee; --sk-shine: #f5f7fa;
     --nav-h: 58px;
   }
   /* ===== 色（ダーク）。印刷は常にライトになるよう screen に限定 ===== */
@@ -35,6 +36,7 @@
       --warn-bg: #3a2e10; --warn: #fdd663;
       --danger-bg: #3d1a18; --danger: #f28b82;
       --hm-ok: #24543a; --hm-warn: #6e5414; --hm-danger: #7a2f2a;
+      --sk-base: #262a31; --sk-shine: #343a43;
       --shadow: none;
     }
   }
@@ -48,6 +50,12 @@
   .label { color: var(--sub); font-size: 12px; }
   .empty { text-align: center; color: var(--sub); padding: 32px 0; }
   .error { color: var(--danger); font-size: 14px; margin-top: 10px; }
+
+  /* ===== スケルトン（読み込み中に、中身の形だけを先に見せる） ===== */
+  .sk { display: block; height: 14px; border-radius: 6px; background: linear-gradient(90deg, var(--sk-base) 25%, var(--sk-shine) 37%, var(--sk-base) 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
+  .sk.pill { width: 64px; height: 20px; border-radius: 999px; margin-top: 4px; }
+  .sk + .sk { margin-top: 8px; }
+  @keyframes shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
 
   /* ===== ヘッダー（アイコンと同じ色の帯） ===== */
   .hero { background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; padding: calc(env(safe-area-inset-top) + 16px) 20px 46px; }
@@ -205,8 +213,26 @@
 </header>
 
 <main>
-  <!-- 読み込み中 -->
-  <div id="screenLoading" class="card empty">読み込み中…</div>
+  <!-- 読み込み中（記録画面の形のスケルトン） -->
+  <div id="screenLoading" aria-busy="true" aria-label="読み込み中">
+    <div class="card status">
+      <div><span class="sk" style="width:48px;height:10px"></span><span class="sk pill"></span></div>
+      <div><span class="sk" style="width:48px;height:10px"></span><span class="sk pill"></span></div>
+      <div><span class="sk" style="width:48px;height:10px"></span><span class="sk" style="width:40px;height:22px"></span></div>
+    </div>
+    <div class="card">
+      <span class="sk" style="width:120px;height:12px"></span>
+      <span class="sk" style="width:70%;height:52px;margin:22px auto 18px"></span>
+      <span class="sk" style="height:42px;border-radius:10px"></span>
+      <span class="sk" style="height:50px;border-radius:12px;margin-top:14px"></span>
+    </div>
+    <div class="card">
+      <span class="sk" style="width:80px;height:10px"></span>
+      <span class="sk" style="height:18px;margin-top:16px"></span>
+      <span class="sk" style="height:18px;margin-top:16px"></span>
+      <span class="sk" style="height:18px;margin-top:16px"></span>
+    </div>
+  </div>
 
   <!-- 暗証番号の入力（初回のみ） -->
   <div id="screenPass" class="card hidden">
@@ -289,6 +315,7 @@
         <div class="label" id="avgFoot" style="margin-top:8px"></div>
       </div>
       <div class="card">
+        <span id="chartSk" class="sk hidden" style="height:300px;border-radius:10px"></span>
         <div class="chart-box"><canvas id="chart"></canvas></div>
         <div id="chartEmpty" class="empty hidden">この期間の記録はありません</div>
         <div id="heatmap" class="hidden"></div>
@@ -675,9 +702,17 @@
     $('streak').innerHTML = n + '<small>日</small>';
   }
 
+  // スケルトンの部品（幅・高さを指定した、光が流れる四角）
+  const sk = (width, height, style) => '<span class="sk" style="width:' + width + ';height:' + height + 'px;' + (style || '') + '"></span>';
+
   async function loadRecent() {
     const list = $('recentList');
-    list.innerHTML = '<li class="label">読み込み中…</li>';
+    if (!cache[currentName]) {
+      $('statusMorning').innerHTML = $('statusNight').innerHTML = '<span class="sk pill"></span>';
+      $('streak').innerHTML = sk('40px', 22);
+      list.innerHTML = '<li>' + sk('8px', 8, 'border-radius:50%') + sk('96px', 13, 'margin:0') + sk('64px', 17, 'margin:0') + '</li>';
+      list.innerHTML += list.innerHTML + list.innerHTML;
+    }
     try {
       const all = await getRecordsFor(currentName);
       renderStatus(all);
@@ -734,14 +769,27 @@
   async function renderChart() {
     updateHero();
     const name = $('chartPerson').value;
+    // まだ読み込んでいない人なら、平均とグラフの形のスケルトンを出しておく
+    const loading = !cache[name];
+    if (loading) {
+      if (chart) { chart.destroy(); chart = null; }
+      $('avgs').innerHTML = ('<div>' + sk('48px', 10) + sk('80%', 24) + '<span class="sk pill"></span></div>').repeat(3);
+      $('avgFoot').innerHTML = sk('60%', 10);
+      ['chartEmpty', 'heatmap'].forEach((id) => $(id).classList.add('hidden'));
+      $('chart').parentElement.classList.add('hidden');
+      $('chartSk').classList.remove('hidden');
+    }
     let all;
     try {
       all = await getRecordsFor(name);
     } catch (e) {
+      $('chartSk').classList.add('hidden');
       $('chartEmpty').textContent = '読み込めませんでした：' + e.message;
       $('chartEmpty').classList.remove('hidden');
       return;
     }
+    $('chartSk').classList.add('hidden');
+    if (name !== $('chartPerson').value) return; // 読み込み中に人が切り替わった
 
     const days = chartState.days;
     const since = periodStart(days);
@@ -990,7 +1038,12 @@
       box.innerHTML = '<p class="empty">期間を正しく選んでください</p>';
       return;
     }
-    box.innerHTML = '<p class="empty">読み込み中…</p>';
+    // レポートの形（見出し・平均の表・グラフ・日ごとの表）のスケルトン
+    box.innerHTML = '<div aria-busy="true" aria-label="読み込み中">'
+      + '<div class="rp-head">' + sk('110px', 18, 'margin:0') + sk('90px', 11, 'margin:0') + '</div>'
+      + sk('60%', 12, 'margin:10px 0 14px') + sk('100%', 92, 'border-radius:8px')
+      + sk('100%', 150, 'border-radius:8px;margin-top:12px')
+      + (sk('100%', 22, 'margin-top:6px')).repeat(8) + '</div>';
     let list;
     try {
       list = await call('getRecords', { name, from, to });
