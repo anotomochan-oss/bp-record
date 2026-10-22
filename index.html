@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>血圧記録</title>
+<!-- ホーム画面に追加したときの名前・アイコン・全画面表示 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="血圧記録">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #202124; --sub: #5f6368; --line: #dadce0;
+    --primary: #1a73e8; --sys: #1a73e8; --dia: #12a4b8; --pulse: #9aa0a6;
+    --ok-bg: #e6f4ea; --ok: #137333;
+    --warn-bg: #fef7e0; --warn: #b06000; --warn-mark: #f9ab00;
+    --danger-bg: #fce8e6; --danger: #c5221f; --danger-mark: #d93025;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "Hiragino Sans", sans-serif; font-size: 17px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; }
+  header select { font-size: 16px; padding: 4px 8px; }
+  main { padding: 12px 16px 40px; max-width: 520px; margin: 0 auto; }
+  .card { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .hidden { display: none !important; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tabs button, .seg button { flex: 1; padding: 10px; font-size: 16px; border: 1px solid var(--line); background: var(--card); border-radius: 8px; color: var(--text); }
+  .tabs button.active, .seg button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .seg { display: flex; gap: 6px; margin-bottom: 10px; }
+  .seg button { padding: 8px 4px; font-size: 15px; }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .row label { width: 80px; flex-shrink: 0; color: var(--sub); font-size: 15px; }
+  .row input { flex: 1; min-width: 0; font-size: 18px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
+  .row input.num { font-size: 26px; text-align: center; max-width: 120px; }
+  .row .unit { color: var(--sub); font-size: 14px; }
+  .opt { color: var(--sub); font-size: 12px; }
+  .primary { width: 100%; padding: 14px; font-size: 18px; font-weight: bold; border: none; border-radius: 10px; background: var(--primary); color: #fff; }
+  .primary:disabled { opacity: .5; }
+  .msg { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 15px; }
+  .msg.ok { background: var(--ok-bg); color: var(--ok); }
+  .msg.warn { background: var(--warn-bg); color: var(--warn); }
+  .msg.danger { background: var(--danger-bg); color: var(--danger); }
+  h2 { font-size: 15px; color: var(--sub); margin: 0 0 8px; }
+  .recent { list-style: none; margin: 0; padding: 0; }
+  .recent li { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 8px 6px; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .recent li:last-child { border-bottom: none; }
+  .recent .bp { font-weight: bold; }
+  .recent .memo { width: 100%; color: var(--sub); font-size: 13px; }
+  .lv1 { background: var(--warn-bg); }
+  .lv2 { background: var(--danger-bg); }
+  .avg { display: flex; justify-content: space-around; text-align: center; }
+  .avg div { font-size: 13px; color: var(--sub); }
+  .avg b { display: block; font-size: 24px; color: var(--text); }
+  .chart-box { position: relative; height: 320px; }
+  .empty { text-align: center; color: var(--sub); padding: 40px 0; }
+  .center { text-align: center; }
+  .namebtn { display: block; width: 100%; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>血圧記録</h1>
+  <select id="nameSelect" class="hidden" aria-label="名前"></select>
+</header>
+
+<main>
+  <!-- 読み込み中 -->
+  <div id="screenLoading" class="card center">読み込み中…</div>
+
+  <!-- 暗証番号の入力（初回のみ） -->
+  <div id="screenPass" class="card hidden">
+    <p>暗証番号を入力してください</p>
+    <div class="row"><input id="passInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password"></div>
+    <button id="passButton" class="primary">次へ</button>
+    <div id="passMsg" class="msg danger hidden"></div>
+  </div>
+
+  <!-- 名前の選択（初回のみ） -->
+  <div id="screenName" class="card hidden">
+    <p>あなたの名前を選んでください</p>
+    <div id="nameButtons"></div>
+  </div>
+
+  <!-- メイン画面 -->
+  <div id="screenMain" class="hidden">
+    <div class="tabs">
+      <button id="tabInputBtn" class="active">記録する</button>
+      <button id="tabChartBtn">グラフ</button>
+    </div>
+
+    <!-- 記録タブ -->
+    <div id="tabInput">
+      <div class="card">
+        <div class="row">
+          <label for="measuredAt">日時</label>
+          <input id="measuredAt" type="datetime-local">
+        </div>
+        <div class="seg" id="catSeg">
+          <button data-cat="朝">朝</button>
+          <button data-cat="夜">夜</button>
+        </div>
+        <div class="row">
+          <label for="sys">最高血圧</label>
+          <input id="sys" class="num" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+          <span class="unit">mmHg</span>
+        </div>
+        <div class="row">
+          <label for="dia">最低血圧</label>
+          <input id="dia" class="num" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+          <span class="unit">mmHg</span>
+        </div>
+        <div class="row">
+          <label for="pulse">脈拍 <span class="opt">任意</span></label>
+          <input id="pulse" class="num" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+          <span class="unit">回/分</span>
+        </div>
+        <div class="row">
+          <label for="memo">メモ <span class="opt">任意</span></label>
+          <input id="memo" type="text" maxlength="100" placeholder="例：寝不足">
+        </div>
+        <button id="submitButton" class="primary">登録する</button>
+        <div id="submitMsg" class="msg hidden"></div>
+      </div>
+      <div class="card">
+        <h2>最近の記録</h2>
+        <ul id="recentList" class="recent"></ul>
+      </div>
+    </div>
+
+    <!-- グラフタブ -->
+    <div id="tabChart" class="hidden">
+      <div class="card">
+        <div class="row">
+          <label for="chartPerson">表示する人</label>
+          <select id="chartPerson" style="font-size:16px;padding:6px;flex:1"></select>
+        </div>
+        <div class="seg" id="daysSeg">
+          <button data-days="7" class="active">1週間</button>
+          <button data-days="30">1か月</button>
+          <button data-days="90">3か月</button>
+        </div>
+        <div class="seg" id="chartCatSeg">
+          <button data-cat="all" class="active">全て</button>
+          <button data-cat="朝">朝のみ</button>
+          <button data-cat="夜">夜のみ</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2 id="avgTitle">期間の平均</h2>
+        <div class="avg">
+          <div>最高血圧<b id="avgSys">-</b></div>
+          <div>最低血圧<b id="avgDia">-</b></div>
+          <div>脈拍<b id="avgPulse">-</b></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="chart-box"><canvas id="chart"></canvas></div>
+        <div id="chartEmpty" class="empty hidden">この期間の記録はありません</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  // ===== データ担当（GAS）のURL：デプロイしたウェブアプリのURLに書き換える =====
+  const API_URL = 'https://script.google.com/macros/s/AKfycbxnD0JHhgeQi3GyYNb0QUVMk6sT1edyCpgNiFH8TCQIAu2yhjSn5iC_J35rKylvqZT2/exec';
+
+  // ===== 端末への保存（使えない環境でも動くようにする） =====
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    remove(k) { try { localStorage.removeItem(k); } catch (e) {} },
+  };
+
+  const $ = (id) => document.getElementById(id);
+  let pass = store.get('bp_pass') || '';
+  let config = null;        // サーバの設定値（利用者名・基準値など）
+  let currentName = '';     // 記録する人
+  const cache = {};         // 名前 → 直近の記録
+  const chartState = { days: 7, cat: 'all' };
+  let chart = null;
+  let catManual = false;    // 朝/夜を手動で選んだか
+
+  // GASを呼ぶ（暗証番号を自動で付ける）
+  // Content-Type を付けない（text/plain になる）ことで、ブラウザの事前確認なしにGASへ送れる
+  async function call(action, params) {
+    let json;
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({ action, pin: pass }, params)),
+      });
+      json = await res.json();
+    } catch (e) {
+      throw new Error('通信できませんでした。電波の状態を確認してください');
+    }
+    if (!json.ok) {
+      const err = new Error(json.error);
+      err.code = json.code;
+      throw err;
+    }
+    return json.data;
+  }
+
+  function show(screen) {
+    ['screenLoading', 'screenPass', 'screenName', 'screenMain'].forEach((id) => $(id).classList.toggle('hidden', id !== screen));
+  }
+
+  function setMsg(el, text, cls) {
+    el.textContent = text;
+    el.className = 'msg ' + cls;
+  }
+
+  // ===== 起動 =====
+  async function init() {
+    if (!pass) return showPass();
+    show('screenLoading');
+    try {
+      config = await call('getConfig');
+    } catch (e) {
+      if (e.code === 'BAD_PIN') {
+        pass = '';
+        store.remove('bp_pass');
+      }
+      return showPass(e.message);
+    }
+    const saved = store.get('bp_name');
+    if (config.users.includes(saved)) startMain(saved);
+    else showNameSelect();
+  }
+
+  function showPass(error) {
+    show('screenPass');
+    $('passMsg').classList.toggle('hidden', !error);
+    if (error) $('passMsg').textContent = error;
+    $('passInput').focus();
+  }
+
+  $('passButton').addEventListener('click', () => {
+    const pin = $('passInput').value.trim();
+    if (!/^[0-9]{4,8}$/.test(pin)) return showPass('暗証番号は4〜8桁の数字で入力してください');
+    pass = pin;
+    store.set('bp_pass', pass);
+    init();
+  });
+  $('passInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passButton').click(); });
+
+  function showNameSelect() {
+    show('screenName');
+    const box = $('nameButtons');
+    box.innerHTML = '';
+    config.users.forEach((name) => {
+      const b = document.createElement('button');
+      b.className = 'primary namebtn';
+      b.textContent = name;
+      b.addEventListener('click', () => startMain(name));
+      box.appendChild(b);
+    });
+  }
+
+  function fillSelect(select, value) {
+    select.innerHTML = '';
+    config.users.forEach((name) => {
+      const o = document.createElement('option');
+      o.value = o.textContent = name;
+      select.appendChild(o);
+    });
+    select.value = value;
+  }
+
+  function startMain(name) {
+    setName(name);
+    fillSelect($('nameSelect'), name);
+    fillSelect($('chartPerson'), name);
+    $('nameSelect').classList.remove('hidden');
+    show('screenMain');
+    resetForm();
+    $('sys').focus();
+  }
+
+  function setName(name) {
+    currentName = name;
+    store.set('bp_name', name);
+    loadRecent();
+  }
+
+  $('nameSelect').addEventListener('change', (e) => {
+    setName(e.target.value);
+    $('chartPerson').value = e.target.value;
+  });
+
+  // ===== タブ切り替え =====
+  function switchTab(chartTab) {
+    $('tabInputBtn').classList.toggle('active', !chartTab);
+    $('tabChartBtn').classList.toggle('active', chartTab);
+    $('tabInput').classList.toggle('hidden', chartTab);
+    $('tabChart').classList.toggle('hidden', !chartTab);
+    if (chartTab) renderChart();
+  }
+  $('tabInputBtn').addEventListener('click', () => switchTab(false));
+  $('tabChartBtn').addEventListener('click', () => switchTab(true));
+
+  // ===== 共通の計算 =====
+  // 0:正常 1:注意 2:強い注意
+  function level(sys, dia) {
+    if (sys >= config.danger.sys || dia >= config.danger.dia) return 2;
+    if (sys >= config.warn.sys || dia >= config.warn.dia) return 1;
+    return 0;
+  }
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function toLocalInput(d) {
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function catOf(value) {
+    const hour = Number((value || '').slice(11, 13));
+    return hour < config.boundaryHour ? '朝' : '夜';
+  }
+
+  async function getRecordsFor(name) {
+    if (!cache[name]) cache[name] = await call('getRecords', { name });
+    return cache[name];
+  }
+
+  // ===== 記録タブ =====
+  function setCat(cat) {
+    $('catSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.cat === cat));
+  }
+  function getCat() {
+    const b = $('catSeg').querySelector('button.active');
+    return b ? b.dataset.cat : '';
+  }
+
+  function resetForm() {
+    $('measuredAt').value = toLocalInput(new Date());
+    catManual = false;
+    setCat(catOf($('measuredAt').value));
+    ['sys', 'dia', 'pulse', 'memo'].forEach((id) => { $(id).value = ''; });
+  }
+
+  // 日時を変えたら朝/夜も自動で合わせる（手動で選んだ後は変えない）
+  $('measuredAt').addEventListener('change', () => {
+    if (!catManual) setCat(catOf($('measuredAt').value));
+  });
+  $('catSeg').addEventListener('click', (e) => {
+    if (!e.target.dataset.cat) return;
+    catManual = true;
+    setCat(e.target.dataset.cat);
+  });
+
+  // 数字を打ち終わったら次の欄へ自動で移る
+  // （もう1桁足すと上限を超える＝入力が終わったとみなす）
+  const numFields = ['sys', 'dia', 'pulse'];
+  numFields.forEach((id, i) => {
+    $(id).addEventListener('input', (e) => {
+      const v = e.target.value.replace(/\D/g, '');
+      e.target.value = v;
+      if (v && Number(v) * 10 > config.range[id].max) {
+        const next = numFields[i + 1];
+        if (next) $(next).focus();
+        else e.target.blur();
+      }
+    });
+  });
+
+  function checkInput(input) {
+    const labels = { sys: '最高血圧', dia: '最低血圧', pulse: '脈拍' };
+    for (const id of numFields) {
+      const v = input[id];
+      if (v === '') {
+        if (id === 'pulse') continue;
+        return labels[id] + 'を入力してください';
+      }
+      const r = config.range[id];
+      if (Number(v) < r.min || Number(v) > r.max) return labels[id] + 'は ' + r.min + '〜' + r.max + ' で入力してください';
+    }
+    if (Number(input.sys) <= Number(input.dia)) return '最高血圧は最低血圧より大きい値にしてください';
+    return '';
+  }
+
+  $('submitButton').addEventListener('click', async () => {
+    const input = {
+      name: currentName,
+      measuredAt: $('measuredAt').value.slice(0, 16),
+      cat: getCat(),
+      sys: $('sys').value,
+      dia: $('dia').value,
+      pulse: $('pulse').value,
+      memo: $('memo').value,
+    };
+    const error = checkInput(input);
+    if (error) return setMsg($('submitMsg'), error, 'danger');
+
+    $('submitButton').disabled = true;
+    try {
+      await call('addRecord', { record: input });
+      const lv = level(Number(input.sys), Number(input.dia));
+      const text = [
+        '登録しました（' + input.sys + '/' + input.dia + '）',
+        '登録しました（' + input.sys + '/' + input.dia + '）。注意：基準（' + config.warn.sys + '/' + config.warn.dia + '）以上です。',
+        '登録しました（' + input.sys + '/' + input.dia + '）。高い値です（' + config.danger.sys + '/' + config.danger.dia + '以上）。続くようなら医師に相談してください。',
+      ][lv];
+      setMsg($('submitMsg'), text, ['ok', 'warn', 'danger'][lv]);
+      delete cache[currentName];
+      resetForm();
+      loadRecent();
+    } catch (e) {
+      setMsg($('submitMsg'), '登録できませんでした：' + e.message, 'danger');
+    } finally {
+      $('submitButton').disabled = false;
+    }
+  });
+
+  async function loadRecent() {
+    const list = $('recentList');
+    list.innerHTML = '<li>読み込み中…</li>';
+    try {
+      const recs = (await getRecordsFor(currentName)).slice(-5).reverse();
+      list.innerHTML = '';
+      if (!recs.length) list.innerHTML = '<li>まだ記録がありません</li>';
+      recs.forEach((r) => {
+        const li = document.createElement('li');
+        li.className = 'lv' + level(r.sys, r.dia);
+        const parts = [
+          [r.dt.slice(5) + ' ' + r.cat, ''],
+          [r.sys + '/' + r.dia, 'bp'],
+          [r.pulse ? '脈 ' + r.pulse : '', ''],
+          [r.memo, 'memo'],
+        ];
+        parts.forEach(([text, cls]) => {
+          if (!text) return;
+          const span = document.createElement('span');
+          span.textContent = text;
+          span.className = cls;
+          li.appendChild(span);
+        });
+        list.appendChild(li);
+      });
+    } catch (e) {
+      list.innerHTML = '';
+      const li = document.createElement('li');
+      li.textContent = '読み込めませんでした：' + e.message;
+      list.appendChild(li);
+    }
+  }
+
+  // ===== グラフタブ =====
+  function segHandler(segId, key, parse) {
+    $(segId).addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      $(segId).querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+      chartState[key] = parse(b.dataset[key]);
+      renderChart();
+    });
+  }
+  segHandler('daysSeg', 'days', Number);
+  segHandler('chartCatSeg', 'cat', String);
+  $('chartPerson').addEventListener('change', renderChart);
+
+  function average(values) {
+    const v = values.filter((x) => x !== null);
+    return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : '-';
+  }
+
+  async function renderChart() {
+    const name = $('chartPerson').value;
+    let all;
+    try {
+      all = await getRecordsFor(name);
+    } catch (e) {
+      $('chartEmpty').textContent = '読み込めませんでした：' + e.message;
+      $('chartEmpty').classList.remove('hidden');
+      return;
+    }
+
+    // 期間の始まり＝(日数-1)日前の0時
+    const since = new Date();
+    since.setDate(since.getDate() - (chartState.days - 1));
+    since.setHours(0, 0, 0, 0);
+    const list = all.filter((r) => r.t >= since.getTime() && (chartState.cat === 'all' || r.cat === chartState.cat));
+
+    const periodLabel = { 7: '1週間', 30: '1か月', 90: '3か月' }[chartState.days];
+    const catLabel = { all: '', '朝': '・朝', '夜': '・夜' }[chartState.cat];
+    $('avgTitle').textContent = name + ' / ' + periodLabel + catLabel + ' の平均（' + list.length + '件）';
+    $('avgSys').textContent = average(list.map((r) => r.sys));
+    $('avgDia').textContent = average(list.map((r) => r.dia));
+    $('avgPulse').textContent = average(list.map((r) => r.pulse));
+
+    if (chart) { chart.destroy(); chart = null; }
+    $('chartEmpty').textContent = 'この期間の記録はありません';
+    $('chartEmpty').classList.toggle('hidden', list.length > 0);
+    $('chart').parentElement.classList.toggle('hidden', list.length === 0);
+    if (!list.length) return;
+
+    const css = getComputedStyle(document.documentElement);
+    const color = (name) => css.getPropertyValue('--' + name).trim();
+    // 基準を超えた点だけ色を変えて大きくする（件数が多いときは点を小さくする）
+    const dense = list.length > 40;
+    const markColor = (v, warn, danger, base) => (v >= danger ? color('danger-mark') : v >= warn ? color('warn-mark') : base);
+    const markSize = (v, warn) => (v >= warn ? (dense ? 3.5 : 6) : (dense ? 0 : 3));
+
+    const labels = list.map((r) => r.dt.slice(5, 10) + (chartState.cat === 'all' ? r.cat : ''));
+    const line = (label, data, c, extra) => Object.assign({
+      label, data, borderColor: c, backgroundColor: c, borderWidth: 2, pointRadius: 3, tension: 0.2, spanGaps: true,
+    }, extra);
+    const baseLine = (label, value, c) => line(label, list.map(() => value), c, {
+      borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, tension: 0,
+    });
+
+    chart = new Chart($('chart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          line('最高血圧', list.map((r) => r.sys), color('sys'), {
+            pointBackgroundColor: list.map((r) => markColor(r.sys, config.warn.sys, config.danger.sys, color('sys'))),
+            pointRadius: list.map((r) => markSize(r.sys, config.warn.sys)),
+          }),
+          line('最低血圧', list.map((r) => r.dia), color('dia'), {
+            pointBackgroundColor: list.map((r) => markColor(r.dia, config.warn.dia, config.danger.dia, color('dia'))),
+            pointRadius: list.map((r) => markSize(r.dia, config.warn.dia)),
+          }),
+          line('脈拍', list.map((r) => r.pulse), color('pulse'), { borderWidth: 1.5, pointRadius: dense ? 0 : 2 }),
+          baseLine('基準 ' + config.warn.sys, config.warn.sys, color('sys')),
+          baseLine('基準 ' + config.warn.dia, config.warn.dia, color('dia')),
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          y: { suggestedMin: 50, suggestedMax: 170 },
+          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } },
+        },
+        plugins: {
+          legend: { labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            filter: (item) => item.datasetIndex < 3,
+            callbacks: {
+              title: (items) => list[items[0].dataIndex].dt + ' ' + list[items[0].dataIndex].cat,
+              afterBody: (items) => list[items[0].dataIndex].memo || '',
+            },
+          },
+        },
+      },
+    });
+  }
+
+  init();
+</script>
+</body>
+</html>
