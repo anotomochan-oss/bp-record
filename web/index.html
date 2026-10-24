@@ -18,7 +18,7 @@
   :root {
     --bg: #f2f4f7; --card: #fff; --text: #1f2328; --sub: #5f6368; --line: #e1e4e8; --field: #f3f5f8;
     --primary: #1a73e8; --primary-2: #12a4b8;
-    --sys: #1a73e8; --dia: #12a4b8; --pulse: #9aa0a6;
+    --sys: #1a73e8; --dia: #12a4b8; --pulse: #9aa0a6; --temp: #e8710a;
     --ok-bg: #e6f4ea; --ok: #137333;
     --warn-bg: #fef7e0; --warn: #b06000; --warn-mark: #f9ab00;
     --danger-bg: #fce8e6; --danger: #c5221f; --danger-mark: #d93025;
@@ -31,7 +31,7 @@
   @media screen and (prefers-color-scheme: dark) {
     :root {
       --bg: #0f1115; --card: #1a1d23; --text: #e8eaed; --sub: #9aa0a6; --line: #2e333b; --field: #252930;
-      --sys: #6aa8ff; --dia: #3cc7d6; --pulse: #7d838b;
+      --sys: #6aa8ff; --dia: #3cc7d6; --pulse: #7d838b; --temp: #fcad70;
       --ok-bg: #16301f; --ok: #81c995;
       --warn-bg: #3a2e10; --warn: #fdd663;
       --danger-bg: #3d1a18; --danger: #f28b82;
@@ -139,6 +139,8 @@
   .avgs .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .avgs .v small { font-size: 14px; }
   .chart-box { position: relative; height: 300px; }
+  .temp-box { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .temp-box .chart-box { height: 140px; }
 
   /* ===== ヒートマップ（カレンダー・曜日） ===== */
   .hm-cal, .hm-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -324,6 +326,10 @@
       <div class="card">
         <span id="chartSk" class="sk hidden" style="height:300px;border-radius:10px"></span>
         <div class="chart-box"><canvas id="chart"></canvas></div>
+        <div id="tempBox" class="temp-box hidden">
+          <div class="label">体温（点線は37.5℃）</div>
+          <div class="chart-box"><canvas id="tempChart"></canvas></div>
+        </div>
         <div id="chartEmpty" class="empty hidden">この期間の記録はありません</div>
         <div id="heatmap" class="hidden"></div>
       </div>
@@ -803,7 +809,7 @@
     // まだ読み込んでいない人なら、平均とグラフの形のスケルトンを出しておく
     const loading = !cache[name];
     if (loading) {
-      if (chart) { chart.destroy(); chart = null; }
+      destroyCharts();
       $('avgs').innerHTML = ('<div>' + sk('48px', 10) + sk('80%', 24) + '<span class="sk pill"></span></div>').repeat(3);
       $('avgFoot').innerHTML = sk('60%', 10);
       ['chartEmpty', 'heatmap'].forEach((id) => $(id).classList.add('hidden'));
@@ -850,7 +856,7 @@
     $('avgFoot').textContent = '脈拍の平均 ' + average(list.map((r) => r.pulse))
       + (temp !== '-' ? ' ・ 体温の平均 ' + temp + '℃' : '') + ' ・ 記録 ' + list.length + '件';
 
-    if (chart) { chart.destroy(); chart = null; }
+    destroyCharts();
     const view = chartState.view;
     // 曜日表示は朝と夜を並べて出すので、朝/夜の絞り込みは使わない
     $('chartCatSeg').classList.toggle('hidden', view === 'week');
@@ -863,6 +869,18 @@
     if (!list.length) return;
 
     chart = new Chart($('chart'), chartConfig(list, chartState.cat === 'all'));
+    // 体温の記録が1件でもあれば、血圧グラフの下に体温グラフを出す
+    if (list.some((r) => r.temp != null)) {
+      $('tempBox').classList.remove('hidden');
+      tempChart = new Chart($('tempChart'), tempChartConfig(list, chartState.cat === 'all'));
+    }
+  }
+
+  let tempChart = null;
+  function destroyCharts() {
+    if (chart) { chart.destroy(); chart = null; }
+    if (tempChart) { tempChart.destroy(); tempChart = null; }
+    $('tempBox').classList.add('hidden');
   }
 
   // ===== ヒートマップ =====
@@ -965,6 +983,53 @@
     },
   };
 
+  // 血圧と体温のグラフで縦軸の幅をそろえ、上下で日付の位置が合うようにする
+  const fixAxisWidth = (scale) => { scale.width = 44; };
+  const fixXPadding = (scale) => { scale.paddingLeft = 0; scale.paddingRight = 8; };
+  const TEMP_LINE = 37.5;
+
+  // 体温グラフの設定（グラフタブとレポートで共通）。横軸は血圧グラフと同じ並び
+  function tempChartConfig(list, withCat) {
+    const css = getComputedStyle(document.documentElement);
+    const color = (name) => css.getPropertyValue('--' + name).trim();
+    return {
+      type: 'line',
+      data: {
+        labels: list.map((r) => r.dt.slice(5, 10) + (withCat ? r.cat : '')),
+        datasets: [
+          {
+            label: '体温', data: list.map((r) => (r.temp != null ? r.temp : null)), borderColor: color('temp'), backgroundColor: color('temp'),
+            borderWidth: 2, pointRadius: list.length > 40 ? 2 : 3, tension: 0.3, spanGaps: true,
+          },
+          {
+            label: TEMP_LINE + '℃', data: list.map(() => TEMP_LINE), borderColor: color('temp'),
+            borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          y: { suggestedMin: 35.5, suggestedMax: 38, afterFit: fixAxisWidth, grid: { color: color('line') }, ticks: { color: color('sub'), maxTicksLimit: 5, callback: (v) => v.toFixed(1) } },
+          x: { grid: { display: false }, afterFit: fixXPadding, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, align: 'inner', color: color('sub') } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            filter: (item) => item.datasetIndex === 0 && item.parsed.y != null,
+            callbacks: {
+              title: (items) => list[items[0].dataIndex].dt + ' ' + list[items[0].dataIndex].cat,
+              label: (item) => '体温 ' + item.parsed.y.toFixed(1) + '℃',
+            },
+          },
+        },
+      },
+    };
+  }
+
   // グラフの設定（グラフタブとレポートで共通）。withCat：横軸の日付に朝/夜を付けるか
   function chartConfig(list, withCat) {
     const css = getComputedStyle(document.documentElement);
@@ -1007,8 +1072,8 @@
         animation: false,
         interaction: { mode: 'index', intersect: false },
         scales: {
-          y: { suggestedMin: 50, suggestedMax: 170, grid: { color: color('line') }, ticks: { color: color('sub') } },
-          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, color: color('sub') } },
+          y: { suggestedMin: 50, suggestedMax: 170, afterFit: fixAxisWidth, grid: { color: color('line') }, ticks: { color: color('sub') } },
+          x: { grid: { display: false }, afterFit: fixXPadding, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, align: 'inner', color: color('sub') } },
         },
         plugins: {
           legend: { labels: { boxWidth: 12, font: { size: 11 }, color: color('sub') } },
@@ -1120,38 +1185,47 @@
       + summaryRow('夜の平均', list.filter((r) => r.cat === '夜'))
       + summaryRow('全体', list)
       + '</tbody></table>'
-      + '<div id="reportChart"></div>'
+      + '<div id="reportChart"></div><div id="reportTempChart"></div>'
       + '<table class="rp-table"><thead><tr><th style="width:20%">日付</th><th>朝</th><th>夜</th><th style="width:24%">メモ</th></tr></thead>'
       + '<tbody>' + dayRows + '</tbody></table>'
       + '<div class="rp-note"><span class="lv1">黄</span>' + config.warn.sys + '/' + config.warn.dia + '以上　'
       + '<span class="lv2">赤</span>' + config.danger.sys + '/' + config.danger.dia + '以上　'
       + '（ ）内は脈拍　※は同じ時間帯に複数回測った平均　朝＝' + config.boundaryHour + '時より前</div>';
 
-    // グラフは画像にして貼る（印刷やPDFでもきれいに出るように）
     if (list.length) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 700;
-      canvas.height = 260;
-      $('reportChart').appendChild(canvas);
-      const cfg = chartConfig(list, true);
-      Object.assign(cfg.options, { responsive: false, devicePixelRatio: 2 });
-      cfg.options.plugins.tooltip = { enabled: false };
-      // 画像は白地で使うので、ダークモードでも文字・罫線は明るい背景用の色にする
-      // また縮小して表示されるので文字を大きめにする
-      const font = { size: 15 };
-      cfg.options.plugins.legend.labels = { boxWidth: 14, font, color: '#5f6368' };
-      cfg.options.scales.x.ticks = { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font, color: '#5f6368' };
-      cfg.options.scales.y.ticks = { font, color: '#5f6368' };
-      cfg.options.scales.y.grid = { color: '#e1e4e8' };
-      const c = new Chart(canvas, cfg);
-      const img = new Image();
-      img.className = 'rp-chart';
-      img.alt = '血圧の推移グラフ';
-      img.src = c.toBase64Image();
-      c.destroy();
-      $('reportChart').replaceChildren(img);
+      $('reportChart').appendChild(chartImage(chartConfig(list, true), 260, '血圧の推移グラフ'));
+    }
+    if (list.some((r) => r.temp != null)) {
+      $('reportTempChart').innerHTML = '<div class="rp-note">体温（点線は' + TEMP_LINE + '℃）</div>';
+      $('reportTempChart').appendChild(chartImage(tempChartConfig(list, true), 150, '体温の推移グラフ'));
     }
     reportTitle = '血圧記録_' + name + '_' + from + '_' + to;
+  }
+
+  // グラフを画像にする（印刷やPDFでもきれいに出るように）
+  function chartImage(cfg, height, alt) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 700;
+    canvas.height = height;
+    document.body.appendChild(canvas);
+    Object.assign(cfg.options, { responsive: false, devicePixelRatio: 2 });
+    cfg.options.plugins.tooltip = { enabled: false };
+    // 画像は白地で使うので、ダークモードでも文字・罫線は明るい背景用の色にする
+    // また縮小して表示されるので文字を大きめにする
+    const font = { size: 15 };
+    const ink = { font, color: '#5f6368' };
+    cfg.options.plugins.legend.labels = Object.assign({ boxWidth: 14 }, ink);
+    Object.assign(cfg.options.scales.x.ticks, ink, { maxTicksLimit: 8 });
+    Object.assign(cfg.options.scales.y.ticks, ink);
+    cfg.options.scales.y.grid = { color: '#e1e4e8' };
+    const c = new Chart(canvas, cfg);
+    const img = new Image();
+    img.className = 'rp-chart';
+    img.alt = alt;
+    img.src = c.toBase64Image();
+    c.destroy();
+    canvas.remove();
+    return img;
   }
 
   // 印刷（iPhoneでは印刷画面の共有ボタンからPDFとして保存できる）
