@@ -1,5 +1,5 @@
 /**
- * 血圧記録システム（サーバ側＝データ担当）
+ * こけログ（血圧記録システム）サーバ側＝データ担当
  * スプレッドシートの「拡張機能 → Apps Script」から作ったスクリプトとして使う。
  * 画面（GitHub Pages）から POST で呼ばれ、JSON を返す。
  */
@@ -24,7 +24,7 @@ const PIN_LOCK_SECONDS = 15 * 60; // ロックする時間（最後に間違え�
 
 /** ブラウザで直接URLを開いたとき用（動作確認） */
 function doGet() {
-  return ContentService.createTextOutput('血圧記録 API は動いています');
+  return ContentService.createTextOutput('こけログ API は動いています');
 }
 
 /**

@@ -3,47 +3,51 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>血圧記録</title>
+<title>こけログ</title>
 <!-- ホーム画面に追加したときの名前・アイコン・全画面表示 -->
-<meta name="theme-color" content="#1a73e8">
+<meta name="theme-color" content="#f5a03a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="血圧記録">
+<meta name="apple-mobile-web-app-title" content="こけログ">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <style>
-  /* ===== 色（ライト） ===== */
+  /* ===== 色（ライト）：にわとりのアイコンに合わせた、あたたかいクリーム色と橙 ===== */
   :root {
-    --bg: #f2f4f7; --card: #fff; --text: #1f2328; --sub: #5f6368; --line: #e1e4e8; --field: #f3f5f8;
-    --primary: #1a73e8; --primary-2: #12a4b8;
-    --sys: #1a73e8; --dia: #12a4b8; --pulse: #9aa0a6; --temp: #e8710a;
+    --bg: #fff8ee; --card: #fff; --text: #3a2e26; --sub: #8a7a6c; --line: #f0e4d4; --field: #fbf3e8;
+    --primary: #e8702a; --primary-2: #f39a3d; --accent-text: #c4580f;
+    --hero-from: #f5a03a; --hero-to: #ffcb62; --hero-text: #3a2e26;
+    --sys: #2f74d0; --dia: #18a39a; --pulse: #a8998b; --temp: #e8702a;
     --ok-bg: #e6f4ea; --ok: #137333;
     --warn-bg: #fef7e0; --warn: #b06000; --warn-mark: #f9ab00;
     --danger-bg: #fce8e6; --danger: #c5221f; --danger-mark: #d93025;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 4px 14px rgba(0, 0, 0, .05);
+    --shadow: 0 1px 2px rgba(150, 100, 40, .06), 0 6px 18px rgba(150, 100, 40, .08);
     --hm-ok: #bfe3c8; --hm-warn: #fbd47e; --hm-danger: #f5a8a1;
-    --sk-base: #e6e9ee; --sk-shine: #f5f7fa;
+    --sk-base: #f3e8da; --sk-shine: #fcf6ee;
     --nav-h: 58px;
   }
   /* ===== 色（ダーク）。印刷は常にライトになるよう screen に限定 ===== */
   @media screen and (prefers-color-scheme: dark) {
     :root {
-      --bg: #0f1115; --card: #1a1d23; --text: #e8eaed; --sub: #9aa0a6; --line: #2e333b; --field: #252930;
-      --sys: #6aa8ff; --dia: #3cc7d6; --pulse: #7d838b; --temp: #fcad70;
+      --bg: #1b1612; --card: #26201a; --text: #f3ebe2; --sub: #b3a594; --line: #3a3128; --field: #302820;
+      --primary: #f08c3a; --primary-2: #f5a54f; --accent-text: #ffb066;
+      --hero-from: #5c3a1b; --hero-to: #7a5223; --hero-text: #ffe9c9;
+      --sys: #6aa8ff; --dia: #3cc7d6; --pulse: #8a7d70; --temp: #fcad70;
       --ok-bg: #16301f; --ok: #81c995;
       --warn-bg: #3a2e10; --warn: #fdd663;
       --danger-bg: #3d1a18; --danger: #f28b82;
       --hm-ok: #24543a; --hm-warn: #6e5414; --hm-danger: #7a2f2a;
-      --sk-base: #262a31; --sk-shine: #343a43;
+      --sk-base: #332a22; --sk-shine: #42372c;
       --shadow: none;
     }
   }
 
   /* ===== 基本 ===== */
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif; font-size: 16px; }
+  /* iPhone に入っている丸ゴシック（ダウンロード不要）で、やわらかい印象に */
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "Hiragino Maru Gothic ProN", ui-rounded, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif; font-size: 16px; }
   button { font: inherit; color: inherit; cursor: pointer; }
   .hidden { display: none !important; }
   .i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
@@ -58,22 +62,25 @@
   @keyframes shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
 
   /* ===== ヘッダー（アイコンと同じ色の帯） ===== */
-  .hero { background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; padding: calc(env(safe-area-inset-top) + 16px) 20px 46px; }
+  .hero { background: linear-gradient(135deg, var(--hero-from), var(--hero-to)); color: var(--hero-text); padding: calc(env(safe-area-inset-top) + 16px) 20px 46px; border-radius: 0 0 28px 28px; }
   .hero-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; max-width: 520px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .logo { width: 44px; height: 44px; border-radius: 14px; flex-shrink: 0; box-shadow: 0 2px 8px rgba(120, 70, 20, .25); }
   .hero h1 { font-size: 19px; margin: 0; font-weight: 700; }
-  .hero p { margin: 4px 0 0; opacity: .85; font-size: 14px; }
-  .who { position: relative; display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, .2); border-radius: 999px; padding: 6px 12px 6px 8px; font-size: 14px; white-space: nowrap; }
+  .hero p { margin: 3px 0 0; opacity: .8; font-size: 13px; }
+  .who { position: relative; display: flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, .5); border-radius: 999px; padding: 6px 12px 6px 8px; font-size: 14px; white-space: nowrap; }
+  @media screen and (prefers-color-scheme: dark) { .who { background: rgba(255, 255, 255, .12); } }
   .who .i { width: 18px; height: 18px; }
   .who select { position: absolute; inset: 0; width: 100%; opacity: 0; font-size: 16px; }
 
   /* ===== 本体・カード ===== */
   main { max-width: 520px; margin: -30px auto 0; padding: 0 14px calc(var(--nav-h) + env(safe-area-inset-bottom) + 24px); }
-  .card { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+  .card { background: var(--card); border-radius: 20px; padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
   .fade { animation: fade .25s ease-out; }
   @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
   /* ===== ボタン・入力欄 ===== */
-  .primary { width: 100%; padding: 14px; font-size: 17px; font-weight: 700; border: none; border-radius: 12px; background: linear-gradient(135deg, var(--primary), #1f86d6); color: #fff; transition: transform .1s, opacity .2s; }
+  .primary { width: 100%; padding: 15px; font-size: 17px; font-weight: 700; border: none; border-radius: 999px; background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; box-shadow: 0 4px 12px rgba(232, 112, 42, .3); transition: transform .1s, opacity .2s; }
   .primary:active { transform: scale(.97); }
   .primary:disabled { opacity: .5; }
   .namebtn { margin-bottom: 10px; }
@@ -81,7 +88,7 @@
   .chip { padding: 7px 14px; border-radius: 999px; border: none; background: var(--field); color: var(--sub); font-size: 14px; transition: background .15s, color .15s, transform .1s; }
   .chip:active { transform: scale(.95); }
   .chip.active { background: var(--primary); color: #fff; }
-  .link { background: none; border: none; color: var(--primary); font-size: 13px; padding: 0; }
+  .link { background: none; border: none; color: var(--accent-text); font-size: 13px; font-weight: 700; padding: 0; }
   .field { width: 100%; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--text); }
   .range { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 
@@ -114,6 +121,8 @@
   .result { display: flex; gap: 12px; align-items: center; animation: pop .35s cubic-bezier(.2, 1.4, .4, 1); }
   @keyframes pop { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: none; } }
   .result .i { width: 36px; height: 36px; }
+  .result-logo { width: 44px; height: 44px; border-radius: 14px; flex-shrink: 0; animation: hop .6s ease-out; }
+  @keyframes hop { 0%, 100% { transform: none; } 30% { transform: translateY(-8px) rotate(-6deg); } 60% { transform: translateY(0) rotate(4deg); } }
   .result b { display: block; font-size: 16px; }
   .result span { font-size: 13px; }
   .result.ok { background: var(--ok-bg); color: var(--ok); }
@@ -167,7 +176,7 @@
   /* ===== 下部タブバー ===== */
   .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
   .nav button { flex: 1; height: var(--nav-h); background: none; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: var(--sub); transition: color .15s; }
-  .nav button.active { color: var(--primary); }
+  .nav button.active { color: var(--accent-text); font-weight: 700; }
 
   /* ===== レポート ===== */
   .report { font-size: 13px; }
@@ -205,9 +214,12 @@
 <body>
 <header class="hero">
   <div class="hero-row">
-    <div>
-      <h1 id="heroTitle">血圧記録</h1>
-      <p id="heroSub">家庭血圧の記録</p>
+    <div class="brand">
+      <img class="logo" src="icon.png" alt="">
+      <div>
+        <h1 id="heroTitle">こけログ</h1>
+        <p id="heroSub">夫婦の血圧ノート</p>
+      </div>
     </div>
     <label id="who" class="who hidden">
       <span data-icon="user"></span><span id="whoName"></span>
@@ -711,7 +723,10 @@
     ][lv];
     const el = $('result');
     el.className = 'card result ' + ['ok', 'warn', 'danger'][lv];
-    el.innerHTML = icon(lv ? 'alert' : 'check') + '<div><b>登録しました（' + sys + '/' + dia + '）</b><span>' + sub + '</span></div>';
+    // 正常なときは、にわとりがお祝い。注意・高いときはまじめな表示のまま
+    el.innerHTML = lv
+      ? icon('alert') + '<div><b>登録しました（' + sys + '/' + dia + '）</b><span>' + sub + '</span></div>'
+      : '<img class="result-logo" src="icon.png" alt=""><div><b>コケッ！記録しました（' + sys + '/' + dia + '）</b><span>' + sub + '</span></div>';
     replay(el, 'result');
   }
 
@@ -1178,7 +1193,7 @@
     }).join('');
 
     box.innerHTML =
-      '<div class="rp-head"><b>家庭血圧記録</b><span>作成日 ' + slash(ymd(new Date())) + '</span></div>'
+      '<div class="rp-head"><b>家庭血圧記録</b><span>作成日 ' + slash(ymd(new Date())) + '（こけログ）</span></div>'
       + '<div class="rp-sub">' + esc(name) + '　' + slash(from) + '〜' + slash(to) + '（' + days.length + '日間）</div>'
       + '<table class="rp-table"><thead><tr><th></th><th>最高</th><th>最低</th><th>脈拍</th><th>体温</th><th>回数</th></tr></thead><tbody>'
       + summaryRow('朝の平均', list.filter((r) => r.cat === '朝'))

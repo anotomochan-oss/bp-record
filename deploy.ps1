@@ -1,4 +1,4 @@
-﻿# 血圧記録システム：変更を GitHub（画面）と Apps Script（データ担当）に反映する
+﻿# こけログ（血圧記録システム）：変更を GitHub（画面）と Apps Script（データ担当）に反映する
 # 使い方：powershell -ExecutionPolicy Bypass -File deploy.ps1 "変更内容のメモ"
 param([string]$Message = '更新')
 
