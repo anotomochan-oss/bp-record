@@ -14,7 +14,9 @@ const RANGE = {
   sys: { min: 50, max: 300 },
   dia: { min: 30, max: 200 },
   pulse: { min: 30, max: 250 },
+  temp: { min: 34, max: 42 }, // 体温（小数1桁）
 };
+const TEMP_COL = 9; // 記録シートの体温の列（I列。後から追加したので一番右）
 
 // 暗証番号を続けて間違えたときのロック
 const MAX_PIN_FAILS = 5;          // この回数間違えたらロック
@@ -72,8 +74,9 @@ function setup() {
 
   if (!ss.getSheetByName(SHEET_RECORDS)) {
     const rec = ss.insertSheet(SHEET_RECORDS, 0);
-    rec.appendRow(['登録日時', '測定日時', '名前', '区分', '最高血圧', '最低血圧', '脈拍', 'メモ']);
-    rec.getRange('A1:H1').setFontWeight('bold');
+    rec.appendRow(['登録日時', '測定日時', '名前', '区分', '最高血圧', '最低血圧', '脈拍', 'メモ', '体温']);
+    rec.getRange('A1:I1').setFontWeight('bold');
+    rec.getRange('I:I').setNumberFormat('0.0');
     rec.setFrozenRows(1);
     rec.getRange('A:B').setNumberFormat(DATE_FORMAT);
     rec.setColumnWidths(1, 2, 130);
@@ -118,13 +121,24 @@ function addRecord_(input) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    sheet_(SHEET_RECORDS).appendRow([
+    const sh = sheet_(SHEET_RECORDS);
+    ensureTempColumn_(sh);
+    sh.appendRow([
       new Date(), r.measuredAt, r.name, r.cat, r.sys, r.dia, r.pulse === null ? '' : r.pulse, r.memo,
+      r.temp === null ? '' : r.temp,
     ]);
   } finally {
     lock.releaseLock();
   }
   return true;
+}
+
+/** 体温の列がない（体温を追加する前に作った）シートなら、見出しと表示形式を足す */
+function ensureTempColumn_(sh) {
+  const header = sh.getRange(1, TEMP_COL);
+  if (header.getValue() === '体温') return;
+  header.setValue('体温').setFontWeight('bold');
+  sh.getRange(2, TEMP_COL, sh.getMaxRows() - 1, 1).setNumberFormat('0.0');
 }
 
 /**
@@ -147,7 +161,7 @@ function getRecords_(name, from, to) {
     }
     until = new Date(until.getTime() + 24 * 60 * 60 * 1000); // 終了日の翌日0時の手前まで
   }
-  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues();
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.min(TEMP_COL, sh.getMaxColumns())).getValues();
   return rows
     .filter(function (row) { return row[2] === name && row[1] instanceof Date && row[1] >= since && row[1] < until; })
     .sort(function (a, b) { return a[1] - b[1]; })
@@ -161,6 +175,7 @@ function getRecords_(name, from, to) {
         dia: Number(row[5]),
         pulse: row[6] === '' ? null : Number(row[6]),
         memo: String(row[7]),
+        temp: row[8] === '' || row[8] === undefined ? null : Number(row[8]),
       };
     });
 }
@@ -236,11 +251,22 @@ function validate_(input, settings) {
   const dia = toInt_(input.dia, '最低血圧', RANGE.dia, true);
   const pulse = toInt_(input.pulse, '脈拍', RANGE.pulse, false);
   if (sys <= dia) throw new Error('最高血圧は最低血圧より大きい値にしてください');
+  const temp = toTemp_(input.temp);
 
   let memo = String(input.memo || '').trim().slice(0, 100);
   if (/^[=+\-@]/.test(memo)) memo = "'" + memo; // 数式として解釈されないようにする
 
-  return { name: name, measuredAt: measuredAt, cat: cat, sys: sys, dia: dia, pulse: pulse, memo: memo };
+  return { name: name, measuredAt: measuredAt, cat: cat, sys: sys, dia: dia, pulse: pulse, memo: memo, temp: temp };
+}
+
+/** 体温（任意）。小数1桁に丸める */
+function toTemp_(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!isFinite(n) || n < RANGE.temp.min || n > RANGE.temp.max) {
+    throw new Error('体温は ' + RANGE.temp.min + '.0〜' + RANGE.temp.max + '.0 で入力してください');
+  }
+  return Math.round(n * 10) / 10;
 }
 
 function toInt_(value, label, range, required) {

@@ -106,6 +106,8 @@
   .bp input::placeholder { color: var(--line); font-size: 14px; font-weight: 400; }
   .bp .slash { font-size: 36px; color: var(--sub); padding-bottom: 8px; }
   .bp .pcol { margin-left: 10px; }
+  .temp-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0 6px; }
+  .temp-row input { width: 88px; font-size: 20px; text-align: center; padding: 6px; }
   .memo { margin: 8px 0 14px; }
 
   /* ===== 登録結果 ===== */
@@ -276,6 +278,11 @@
           <div class="slash">/</div>
           <div class="col"><label class="label" for="dia">最低</label><br><input id="dia" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off"></div>
           <div class="col pcol"><label class="label" for="pulse">脈拍</label><br><input id="pulse" class="small" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="任意"></div>
+        </div>
+        <div class="temp-row">
+          <label class="label" for="temp">体温</label>
+          <input id="temp" class="field" type="text" inputmode="decimal" autocomplete="off" placeholder="任意">
+          <span class="label">℃</span>
         </div>
         <input id="memo" class="field memo" type="text" maxlength="100" placeholder="メモ（任意）例：寝不足">
         <button id="submitButton" class="primary">登録する</button>
@@ -560,6 +567,12 @@
     return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : '-';
   }
 
+  // 体温の平均（小数1桁）。体温の無い記録は除く
+  function averageTemp(recs) {
+    const v = recs.map((r) => r.temp).filter((x) => x != null);
+    return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : '-';
+  }
+
   async function getRecordsFor(name) {
     if (!cache[name]) cache[name] = await call('getRecords', { name });
     return cache[name];
@@ -586,7 +599,7 @@
     setCat(catOf($('measuredAt').value));
     $('whenEdit').classList.add('hidden');
     $('whenToggle').textContent = '日時を変更';
-    ['sys', 'dia', 'pulse', 'memo'].forEach((id) => { $(id).value = ''; });
+    ['sys', 'dia', 'pulse', 'temp', 'memo'].forEach((id) => { $(id).value = ''; });
   }
 
   $('whenToggle').addEventListener('click', () => {
@@ -620,7 +633,23 @@
     });
   });
 
+  // 体温：「365」のように3桁を打ったら「36.5」にして入力を終える
+  $('temp').addEventListener('input', (e) => {
+    let v = e.target.value.replace(/[^\d.]/g, '');
+    if (/^\d{3}$/.test(v)) v = v.slice(0, 2) + '.' + v[2];
+    e.target.value = v;
+    if (/^\d{2}\.\d$/.test(v)) e.target.blur();
+  });
+
+  // 体温の範囲（GASが古くて設定に無いときの予備の値つき）
+  const tempRange = () => config.range.temp || { min: 34, max: 42 };
+
   function checkInput(input) {
+    if (input.temp !== '') {
+      const t = Number(input.temp);
+      const r = tempRange();
+      if (!isFinite(t) || t < r.min || t > r.max) return '体温は ' + r.min + '.0〜' + r.max + '.0 で入力してください';
+    }
     const labels = { sys: '最高血圧', dia: '最低血圧', pulse: '脈拍' };
     for (const id of numFields) {
       const v = input[id];
@@ -643,6 +672,7 @@
       sys: $('sys').value,
       dia: $('dia').value,
       pulse: $('pulse').value,
+      temp: $('temp').value,
       memo: $('memo').value,
     };
     const error = checkInput(input);
@@ -722,6 +752,7 @@
         + '<span class="dt">' + r.dt.slice(5) + ' ' + r.cat + '</span>'
         + '<span class="val">' + r.sys + '/' + r.dia + '</span>'
         + (r.pulse ? '<span class="pl">脈 ' + r.pulse + '</span>' : '')
+        + (r.temp != null ? '<span class="pl">' + r.temp.toFixed(1) + '℃</span>' : '')
         + (r.memo ? '<span class="mm">' + esc(r.memo) + '</span>' : '')
         + '</li>').join('') : '<li class="label">まだ記録がありません</li>';
     } catch (e) {
@@ -815,7 +846,9 @@
     }).join('');
 
     const list = cur.filter(byCat(chartState.cat));
-    $('avgFoot').textContent = '脈拍の平均 ' + average(list.map((r) => r.pulse)) + ' ・ 記録 ' + list.length + '件';
+    const temp = averageTemp(list);
+    $('avgFoot').textContent = '脈拍の平均 ' + average(list.map((r) => r.pulse))
+      + (temp !== '-' ? ' ・ 体温の平均 ' + temp + '℃' : '') + ' ・ 記録 ' + list.length + '件';
 
     if (chart) { chart.destroy(); chart = null; }
     const view = chartState.view;
@@ -845,8 +878,9 @@
   function slotText(recs) {
     if (!recs.length) return '—';
     const pulse = average(recs.map((r) => r.pulse));
+    const temp = averageTemp(recs);
     return average(recs.map((r) => r.sys)) + '/' + average(recs.map((r) => r.dia))
-      + (pulse !== '-' ? ' (' + pulse + ')' : '') + (recs.length > 1 ? '※' : '');
+      + (pulse !== '-' ? ' (' + pulse + ')' : '') + (temp !== '-' ? ' ' + temp + '℃' : '') + (recs.length > 1 ? '※' : '');
   }
 
   // カレンダー：1マス＝1日。色はその日でいちばん高い判定、点線は記録なし
@@ -1025,7 +1059,9 @@
     const sys = average(recs.map((r) => r.sys));
     const dia = average(recs.map((r) => r.dia));
     const pulse = average(recs.map((r) => r.pulse));
-    const text = sys + '/' + dia + (pulse !== '-' ? ' (' + pulse + ')' : '') + (recs.length > 1 ? '※' : '');
+    const temp = averageTemp(recs);
+    const text = sys + '/' + dia + (pulse !== '-' ? ' (' + pulse + ')' : '') + (recs.length > 1 ? '※' : '')
+      + (temp !== '-' ? '<br><small>' + temp + '℃</small>' : '');
     return '<td class="lv' + level(sys, dia) + '">' + text + '</td>';
   }
 
@@ -1067,7 +1103,8 @@
     });
 
     const summaryRow = (label, recs) => '<tr><th>' + label + '</th><td>' + average(recs.map((r) => r.sys)) + '</td><td>'
-      + average(recs.map((r) => r.dia)) + '</td><td>' + average(recs.map((r) => r.pulse)) + '</td><td>' + recs.length + '</td></tr>';
+      + average(recs.map((r) => r.dia)) + '</td><td>' + average(recs.map((r) => r.pulse)) + '</td><td>' + averageTemp(recs)
+      + '</td><td>' + recs.length + '</td></tr>';
     const dayRows = days.map((key) => {
       const day = byDay[key];
       const memos = day['朝'].concat(day['夜']).map((r) => r.memo).filter(Boolean);
@@ -1078,7 +1115,7 @@
     box.innerHTML =
       '<div class="rp-head"><b>家庭血圧記録</b><span>作成日 ' + slash(ymd(new Date())) + '</span></div>'
       + '<div class="rp-sub">' + esc(name) + '　' + slash(from) + '〜' + slash(to) + '（' + days.length + '日間）</div>'
-      + '<table class="rp-table"><thead><tr><th></th><th>最高</th><th>最低</th><th>脈拍</th><th>回数</th></tr></thead><tbody>'
+      + '<table class="rp-table"><thead><tr><th></th><th>最高</th><th>最低</th><th>脈拍</th><th>体温</th><th>回数</th></tr></thead><tbody>'
       + summaryRow('朝の平均', list.filter((r) => r.cat === '朝'))
       + summaryRow('夜の平均', list.filter((r) => r.cat === '夜'))
       + summaryRow('全体', list)
