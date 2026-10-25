@@ -138,6 +138,30 @@
   .recent .val { font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
   .recent .pl { color: var(--sub); font-size: 13px; }
   .recent .mm { color: var(--sub); font-size: 12px; flex-basis: 100%; padding-left: 124px; margin-top: -6px; }
+  .recent li[data-id] { cursor: pointer; }
+  .recent .go { margin-left: auto; color: var(--sub); font-size: 18px; }
+
+  /* ===== 編集パネル（下からせり上がる） ===== */
+  .sheet { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-end; justify-content: center; background: rgba(40, 25, 10, .45); animation: fade .2s ease-out; }
+  .sheet-panel { width: 100%; max-width: 520px; max-height: 92vh; overflow-y: auto; background: var(--card); border-radius: 24px 24px 0 0; padding: 18px 16px calc(env(safe-area-inset-bottom) + 18px); animation: slideUp .25s ease-out; }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: none; } }
+  .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .sheet-head b { font-size: 17px; }
+  .edit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
+  .edit-grid label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+  .edit-grid input { text-align: center; font-size: 18px; padding: 8px 4px; }
+  .edit-grid input::placeholder { font-size: 13px; color: var(--sub); opacity: .6; }
+  .danger-btn { width: 100%; margin-top: 10px; padding: 12px; border-radius: 999px; border: 1.5px solid var(--danger); background: transparent; color: var(--danger); font-weight: 700; transition: background .15s, color .15s; }
+  .danger-btn.armed { background: var(--danger); color: #fff; }
+
+  /* ===== 下に出るお知らせ（元に戻すボタンつき） ===== */
+  .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px); z-index: 40; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 10px 18px; border-radius: 999px; background: #3a2e26; color: #fff; font-size: 14px; white-space: nowrap; box-shadow: 0 6px 18px rgba(0, 0, 0, .2); animation: fade .2s ease-out; }
+  .toast button { background: none; border: none; padding: 0; color: #ffcb62; font-weight: 700; }
+
+  /* カレンダーの詳細から、その日の記録を1件ずつ編集する */
+  .hm-recs { margin-top: 8px; }
+  .hm-rec { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px 10px; margin-top: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--text); font-size: 13px; text-align: left; }
+  .hm-rec .go { margin-left: auto; color: var(--sub); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
   .dot.lv1 { background: var(--warn-mark); }
   .dot.lv2 { background: var(--danger-mark); }
@@ -205,7 +229,7 @@
     @page { size: A4 portrait; margin: 12mm; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { background: #fff; }
-    .hero, .nav, .no-print { display: none !important; }
+    .hero, .nav, .no-print, .sheet, .toast { display: none !important; }
     main { max-width: none; margin: 0; padding: 0; }
     .card.report { padding: 0; margin: 0; border-radius: 0; box-shadow: none; }
     .rp-table tr { break-inside: avoid; }
@@ -369,6 +393,34 @@
     </div>
   </div>
 </main>
+
+<!-- 記録の編集パネル -->
+<div id="editSheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+  <div class="sheet-panel">
+    <div class="sheet-head">
+      <b id="editTitle">記録を編集</b>
+      <button class="link" id="editClose">閉じる</button>
+    </div>
+    <input id="eMeasuredAt" class="field" type="datetime-local" aria-label="測定日時">
+    <div class="chips" id="eCatSeg" style="margin-top:8px">
+      <button class="chip" data-cat="朝">朝</button>
+      <button class="chip" data-cat="夜">夜</button>
+    </div>
+    <div class="edit-grid">
+      <div><label for="eSys">最高血圧</label><input id="eSys" class="field" type="text" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="eDia">最低血圧</label><input id="eDia" class="field" type="text" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="ePulse">脈拍</label><input id="ePulse" class="field" type="text" inputmode="numeric" autocomplete="off" placeholder="任意"></div>
+      <div><label for="eTemp">体温 ℃</label><input id="eTemp" class="field" type="text" inputmode="decimal" autocomplete="off" placeholder="任意"></div>
+      <div><label for="eWeight">体重 kg</label><input id="eWeight" class="field" type="text" inputmode="decimal" autocomplete="off" placeholder="任意"></div>
+    </div>
+    <input id="eMemo" class="field" type="text" maxlength="100" placeholder="メモ（任意）">
+    <button id="editSave" class="primary" style="margin-top:14px">保存する</button>
+    <button id="editDelete" class="danger-btn">この記録を削除</button>
+    <div id="editError" class="error hidden"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden" role="status"><span id="toastText"></span><button id="toastAction" class="hidden"></button></div>
 
 <nav id="nav" class="nav hidden">
   <button data-tab="Input" class="active"><span data-icon="pencil"></span>記録</button>
@@ -777,18 +829,168 @@
       const all = await getRecordsFor(currentName);
       renderStatus(all);
       const recs = all.slice(-5).reverse();
-      list.innerHTML = recs.length ? recs.map((r) => '<li>'
+      // 行を押すと編集パネルが開く（IDのない古い記録は除く）
+      list.innerHTML = recs.length ? recs.map((r) => '<li' + (r.id ? ' data-id="' + esc(r.id) + '"' : '') + '>'
         + '<span class="dot lv' + level(r.sys, r.dia) + '"></span>'
         + '<span class="dt">' + r.dt.slice(5) + ' ' + r.cat + '</span>'
         + '<span class="val">' + r.sys + '/' + r.dia + '</span>'
         + (r.pulse ? '<span class="pl">脈 ' + r.pulse + '</span>' : '')
         + (r.temp != null ? '<span class="pl">' + r.temp.toFixed(1) + '℃</span>' : '')
         + (r.weight != null ? '<span class="pl">' + r.weight.toFixed(1) + 'kg</span>' : '')
+        + (r.id ? '<span class="go">›</span>' : '')
         + (r.memo ? '<span class="mm">' + esc(r.memo) + '</span>' : '')
         + '</li>').join('') : '<li class="label">まだ記録がありません</li>';
     } catch (e) {
       list.innerHTML = '<li class="label">読み込めませんでした：' + esc(e.message) + '</li>';
     }
+  }
+
+  // ===== 記録の編集・削除 =====
+  let editing = null;     // 編集中の記録
+  let deleteArmed = null; // 削除ボタンを1回押した状態（もう一度押すと削除）のタイマー
+
+  $('recentList').addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-id]');
+    if (li) openEdit((cache[currentName] || []).find((r) => r.id === li.dataset.id));
+  });
+
+  // "2026/10/20 07:10" → "2026-10-20T07:10"（日時の入力欄の形）
+  const toInputValue = (dt) => dt.replace(/\//g, '-').replace(' ', 'T');
+  const numText = (v, digits) => (v == null ? '' : digits ? v.toFixed(digits) : String(v));
+
+  function setEditCat(cat) {
+    $('eCatSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.cat === cat));
+  }
+
+  function openEdit(r) {
+    if (!r || !r.id) return;
+    editing = r;
+    $('eMeasuredAt').value = toInputValue(r.dt);
+    setEditCat(r.cat);
+    $('eSys').value = r.sys;
+    $('eDia').value = r.dia;
+    $('ePulse').value = numText(r.pulse);
+    $('eTemp').value = numText(r.temp, 1);
+    $('eWeight').value = numText(r.weight, 1);
+    $('eMemo').value = r.memo || '';
+    $('editError').classList.add('hidden');
+    disarmDelete();
+    $('editSheet').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeEdit() {
+    $('editSheet').classList.add('hidden');
+    document.body.style.overflow = '';
+    editing = null;
+    disarmDelete();
+  }
+  $('editClose').addEventListener('click', closeEdit);
+  $('editSheet').addEventListener('click', (e) => { if (e.target === $('editSheet')) closeEdit(); });
+
+  $('eCatSeg').addEventListener('click', (e) => { if (e.target.dataset.cat) setEditCat(e.target.dataset.cat); });
+  $('eMeasuredAt').addEventListener('change', () => setEditCat(catOf($('eMeasuredAt').value)));
+  ['eSys', 'eDia', 'ePulse'].forEach((id) => $(id).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); }));
+  ['eTemp', 'eWeight'].forEach((id) => $(id).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ''); }));
+
+  function editInput() {
+    const b = $('eCatSeg').querySelector('button.active');
+    return {
+      name: currentName,
+      measuredAt: $('eMeasuredAt').value.slice(0, 16),
+      cat: b ? b.dataset.cat : '',
+      sys: $('eSys').value, dia: $('eDia').value, pulse: $('ePulse').value,
+      temp: $('eTemp').value, weight: $('eWeight').value, memo: $('eMemo').value,
+    };
+  }
+
+  function showEditError(text) {
+    $('editError').textContent = text;
+    $('editError').classList.remove('hidden');
+  }
+
+  // 保存・削除のあとは読み込み直して、開いている画面を描き直す
+  function afterChange() {
+    delete cache[currentName];
+    loadRecent();
+    if (currentTab === 'Chart') renderChart();
+    if (currentTab === 'Report') renderReport();
+  }
+
+  $('editSave').addEventListener('click', async () => {
+    const input = editInput();
+    const error = checkInput(input);
+    if (error) return showEditError(error);
+    $('editSave').disabled = true;
+    try {
+      await call('updateRecord', { id: editing.id, record: input });
+      closeEdit();
+      afterChange();
+      showToast('記録を保存しました');
+    } catch (e) {
+      showEditError('保存できませんでした：' + e.message);
+    } finally {
+      $('editSave').disabled = false;
+    }
+  });
+
+  function disarmDelete() {
+    clearTimeout(deleteArmed);
+    deleteArmed = null;
+    $('editDelete').classList.remove('armed');
+    $('editDelete').textContent = 'この記録を削除';
+  }
+
+  // 1回目で確認の表示に変わり、4秒以内にもう一度押すと削除する
+  $('editDelete').addEventListener('click', async () => {
+    if (!deleteArmed) {
+      $('editDelete').classList.add('armed');
+      $('editDelete').textContent = '本当に削除する？（もう一度押す）';
+      deleteArmed = setTimeout(disarmDelete, 4000);
+      return;
+    }
+    const r = editing;
+    disarmDelete();
+    $('editDelete').disabled = true;
+    try {
+      await call('deleteRecord', { id: r.id, name: currentName });
+      closeEdit();
+      afterChange();
+      showToast('記録を削除しました', '元に戻す', () => restoreRecord(r));
+    } catch (e) {
+      showEditError('削除できませんでした：' + e.message);
+    } finally {
+      $('editDelete').disabled = false;
+    }
+  });
+
+  // 削除した記録を、同じ内容でもう一度登録する（登録日時とIDは新しくなる）
+  async function restoreRecord(r) {
+    try {
+      await call('addRecord', { record: {
+        name: currentName, measuredAt: toInputValue(r.dt), cat: r.cat,
+        sys: String(r.sys), dia: String(r.dia), pulse: numText(r.pulse),
+        temp: numText(r.temp, 1), weight: numText(r.weight, 1), memo: r.memo || '',
+      } });
+      afterChange();
+      showToast('元に戻しました');
+    } catch (e) {
+      showToast('元に戻せませんでした：' + e.message);
+    }
+  }
+
+  // 画面下のお知らせ。action を渡すとボタン（元に戻す など）を付ける
+  let toastTimer = null;
+  function showToast(text, actionLabel, action) {
+    clearTimeout(toastTimer);
+    $('toastText').textContent = text;
+    const btn = $('toastAction');
+    btn.classList.toggle('hidden', !action);
+    btn.textContent = actionLabel || '';
+    btn.onclick = () => { $('toast').classList.add('hidden'); action(); };
+    $('toast').classList.remove('hidden');
+    replay($('toast'), 'toast');
+    toastTimer = setTimeout(() => $('toast').classList.add('hidden'), action ? 7000 : 3000);
   }
 
   // ===== グラフタブ =====
@@ -958,7 +1160,10 @@
       + '<div id="hmDetail" class="hm-detail">マスを押すと、その日の値が出ます（色はその日でいちばん高い判定）</div>';
     $('heatmap').innerHTML = html;
 
+    const own = $('chartPerson').value === currentName; // 自分の記録だけ編集できる
     $('heatmap').onclick = (e) => {
+      const rec = e.target.closest('[data-id]');
+      if (rec) return openEdit(list.find((r) => r.id === rec.dataset.id));
       const b = e.target.closest('[data-day]');
       if (!b) return;
       $('heatmap').querySelectorAll('.sel').forEach((x) => x.classList.remove('sel'));
@@ -969,7 +1174,11 @@
       const memos = recs.map((r) => r.memo).filter(Boolean);
       $('hmDetail').innerHTML = '<b>' + key.slice(5) + '（' + w + '）</b>　'
         + '朝 ' + slotText(recs.filter((r) => r.cat === '朝')) + '　夜 ' + slotText(recs.filter((r) => r.cat === '夜'))
-        + (memos.length ? '<br>' + esc(memos.join('／')) : '');
+        + (memos.length ? '<br>' + esc(memos.join('／')) : '')
+        + (own && recs.some((r) => r.id)
+          ? '<div class="hm-recs">' + recs.filter((r) => r.id).map((r) => '<button class="hm-rec" data-id="' + esc(r.id) + '">'
+            + r.dt.slice(11) + ' ' + r.cat + '　<b>' + r.sys + '/' + r.dia + '</b><span class="go">編集 ›</span></button>').join('') + '</div>'
+          : '');
     };
   }
 

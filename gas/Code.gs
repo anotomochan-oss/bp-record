@@ -22,7 +22,9 @@ const EXTRA_COLUMNS = [
   { col: 9, name: '体温' },  // I列
   { col: 10, name: '体重' }, // J列
 ];
-const LAST_COL = 10;
+// 記録ごとの背番号（編集・削除で使う）。行番号は並べ替えや手での削除でずれるので使わない
+const ID_COL = 11; // K列
+const LAST_COL = 11;
 
 // 暗証番号を続けて間違えたときのロック
 const MAX_PIN_FAILS = 5;          // この回数間違えたらロック
@@ -35,7 +37,7 @@ function doGet() {
 
 /**
  * 画面からの呼び出しの入口
- * 受け取る JSON：{ action: 'getConfig' | 'addRecord' | 'getRecords', pin: '1234', ... }
+ * 受け取る JSON：{ action: 'getConfig' | 'addRecord' | 'getRecords' | 'updateRecord' | 'deleteRecord', pin: '1234', ... }
  * 返す JSON    ：{ ok: true, data: ... } または { ok: false, code: 'BAD_PIN' など, error: 'メッセージ' }
  */
 function doPost(e) {
@@ -46,6 +48,8 @@ function doPost(e) {
       getConfig: function () { return getSettings_(); },
       addRecord: function () { return addRecord_(req.record); },
       getRecords: function () { return getRecords_(req.name, req.from, req.to); },
+      updateRecord: function () { return updateRecord_(req.id, req.record); },
+      deleteRecord: function () { return deleteRecord_(req.id, req.name); },
     };
     if (!actions[req.action]) throw apiError_('BAD_REQUEST', '不明な操作です');
     checkPin_(req.pin);
@@ -80,8 +84,8 @@ function setup() {
 
   if (!ss.getSheetByName(SHEET_RECORDS)) {
     const rec = ss.insertSheet(SHEET_RECORDS, 0);
-    rec.appendRow(['登録日時', '測定日時', '名前', '区分', '最高血圧', '最低血圧', '脈拍', 'メモ', '体温', '体重']);
-    rec.getRange('A1:J1').setFontWeight('bold');
+    rec.appendRow(['登録日時', '測定日時', '名前', '区分', '最高血圧', '最低血圧', '脈拍', 'メモ', '体温', '体重', 'ID']);
+    rec.getRange('A1:K1').setFontWeight('bold');
     rec.getRange('I:J').setNumberFormat('0.0');
     rec.setFrozenRows(1);
     rec.getRange('A:B').setNumberFormat(DATE_FORMAT);
@@ -121,23 +125,91 @@ function addAlertFormatting_(sheet) {
 
 // ===== doPost から呼ばれる関数（暗証番号は doPost で確認済み） =====
 
-/** 記録を1件登録する */
+/** 記録を1件登録する。新しい記録のIDを返す */
 function addRecord_(input) {
   const r = validate_(input, getSettings_());
+  return withLock_(function () {
+    const sh = sheet_(SHEET_RECORDS);
+    ensureExtraColumns_(sh);
+    ensureIds_(sh);
+    const id = Utilities.getUuid();
+    sh.appendRow([new Date()].concat(recordCells_(r), [id]));
+    return { id: id };
+  });
+}
+
+/** 記録を1件書き換える（登録日時とIDはそのまま）。別の人の記録は書き換えない */
+function updateRecord_(id, input) {
+  const r = validate_(input, getSettings_());
+  return withLock_(function () {
+    const sh = sheet_(SHEET_RECORDS);
+    ensureExtraColumns_(sh);
+    const row = findRowById_(sh, id);
+    if (sh.getRange(row, 3).getValue() !== r.name) throw apiError_('FORBIDDEN', '自分の記録だけ編集できます');
+    const cells = recordCells_(r);
+    sh.getRange(row, 2, 1, cells.length).setValues([cells]);
+    return { id: id };
+  });
+}
+
+/** 記録を1件削除する。別の人の記録は削除しない */
+function deleteRecord_(id, name) {
+  return withLock_(function () {
+    const sh = sheet_(SHEET_RECORDS);
+    const row = findRowById_(sh, id);
+    if (sh.getRange(row, 3).getValue() !== name) throw apiError_('FORBIDDEN', '自分の記録だけ削除できます');
+    sh.deleteRow(row);
+    return true;
+  });
+}
+
+/** 測定日時〜体重（B〜J列）の値の並び */
+function recordCells_(r) {
+  return [
+    r.measuredAt, r.name, r.cat, r.sys, r.dia, r.pulse === null ? '' : r.pulse, r.memo,
+    r.temp === null ? '' : r.temp,
+    r.weight === null ? '' : r.weight,
+  ];
+}
+
+/** 同時に書き込まれても壊れないように、ロックをかけて実行する */
+function withLock_(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    const sh = sheet_(SHEET_RECORDS);
-    ensureExtraColumns_(sh);
-    sh.appendRow([
-      new Date(), r.measuredAt, r.name, r.cat, r.sys, r.dia, r.pulse === null ? '' : r.pulse, r.memo,
-      r.temp === null ? '' : r.temp,
-      r.weight === null ? '' : r.weight,
-    ]);
+    return fn();
   } finally {
     lock.releaseLock();
   }
-  return true;
+}
+
+/** IDから行番号を探す（毎回探すので、並べ替えや手での削除があってもずれない） */
+function findRowById_(sh, id) {
+  if (!id) throw apiError_('BAD_REQUEST', '記録の指定がありません');
+  const n = sh.getLastRow() - 1;
+  const ids = n > 0 ? sh.getRange(2, ID_COL, n, 1).getValues() : [];
+  for (let i = 0; i < ids.length; i++) {
+    if (ids[i][0] === id) return i + 2;
+  }
+  throw apiError_('NOT_FOUND', '記録が見つかりません（スプレッドシートで削除された可能性があります）');
+}
+
+/** ID の列がない、またはIDのない記録（ID追加前の記録）があれば付ける */
+function ensureIds_(sh) {
+  const header = sh.getRange(1, ID_COL);
+  if (header.getValue() !== 'ID') header.setValue('ID').setFontWeight('bold');
+  const n = sh.getLastRow() - 1;
+  if (n < 1) return;
+  const range = sh.getRange(2, ID_COL, n, 1);
+  const ids = range.getValues();
+  let changed = false;
+  ids.forEach(function (row) {
+    if (row[0] === '') {
+      row[0] = Utilities.getUuid();
+      changed = true;
+    }
+  });
+  if (changed) range.setValues(ids);
 }
 
 /** 後から追加した列（体温・体重）がない古いシートなら、見出しと表示形式を足す */
@@ -170,6 +242,8 @@ function getRecords_(name, from, to) {
     }
     until = new Date(until.getTime() + 24 * 60 * 60 * 1000); // 終了日の翌日0時の手前まで
   }
+  // ID追加前の記録にもIDを付けてから読む（画面から編集・削除できるように）
+  withLock_(function () { ensureIds_(sh); });
   const rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.min(LAST_COL, sh.getMaxColumns())).getValues();
   return rows
     .filter(function (row) { return row[2] === name && row[1] instanceof Date && row[1] >= since && row[1] < until; })
@@ -186,6 +260,7 @@ function getRecords_(name, from, to) {
         memo: String(row[7]),
         temp: row[8] === '' || row[8] === undefined ? null : Number(row[8]),
         weight: row[9] === '' || row[9] === undefined ? null : Number(row[9]),
+        id: row[10] ? String(row[10]) : null,
       };
     });
 }
