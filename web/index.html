@@ -19,7 +19,7 @@
     --bg: #fff8ee; --card: #fff; --text: #3a2e26; --sub: #8a7a6c; --line: #f0e4d4; --field: #fbf3e8;
     --primary: #e8702a; --primary-2: #f39a3d; --accent-text: #c4580f;
     --hero-from: #f5a03a; --hero-to: #ffcb62; --hero-text: #3a2e26;
-    --sys: #2f74d0; --dia: #18a39a; --pulse: #a8998b; --temp: #e8702a;
+    --sys: #2f74d0; --dia: #18a39a; --pulse: #a8998b; --temp: #e8702a; --weight: #8b63c9;
     --ok-bg: #e6f4ea; --ok: #137333;
     --warn-bg: #fef7e0; --warn: #b06000; --warn-mark: #f9ab00;
     --danger-bg: #fce8e6; --danger: #c5221f; --danger-mark: #d93025;
@@ -34,7 +34,7 @@
       --bg: #1b1612; --card: #26201a; --text: #f3ebe2; --sub: #b3a594; --line: #3a3128; --field: #302820;
       --primary: #f08c3a; --primary-2: #f5a54f; --accent-text: #ffb066;
       --hero-from: #5c3a1b; --hero-to: #7a5223; --hero-text: #ffe9c9;
-      --sys: #6aa8ff; --dia: #3cc7d6; --pulse: #8a7d70; --temp: #fcad70;
+      --sys: #6aa8ff; --dia: #3cc7d6; --pulse: #8a7d70; --temp: #fcad70; --weight: #b99ae6;
       --ok-bg: #16301f; --ok: #81c995;
       --warn-bg: #3a2e10; --warn: #fdd663;
       --danger-bg: #3d1a18; --danger: #f28b82;
@@ -113,8 +113,9 @@
   .bp input::placeholder { color: var(--line); font-size: 14px; font-weight: 400; }
   .bp .slash { font-size: 36px; color: var(--sub); padding-bottom: 8px; }
   .bp .pcol { margin-left: 10px; }
-  .temp-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0 6px; }
-  .temp-row input { width: 88px; font-size: 20px; text-align: center; padding: 6px; }
+  .temp-row { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 2px 0 6px; }
+  .temp-row input { width: 76px; font-size: 20px; text-align: center; padding: 6px; }
+  .temp-row input::placeholder { font-size: 13px; color: var(--sub); opacity: .6; }
   .memo { margin: 8px 0 14px; }
 
   /* ===== 登録結果 ===== */
@@ -148,8 +149,8 @@
   .avgs .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .avgs .v small { font-size: 14px; }
   .chart-box { position: relative; height: 300px; }
-  .temp-box { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .temp-box .chart-box { height: 140px; }
+  .mini-box { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .mini-box .chart-box { height: 140px; }
 
   /* ===== ヒートマップ（カレンダー・曜日） ===== */
   .hm-cal, .hm-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -297,6 +298,9 @@
           <label class="label" for="temp">体温</label>
           <input id="temp" class="field" type="text" inputmode="decimal" autocomplete="off" placeholder="任意">
           <span class="label">℃</span>
+          <label class="label" for="weight" style="margin-left:8px">体重</label>
+          <input id="weight" class="field" type="text" inputmode="decimal" autocomplete="off" placeholder="任意">
+          <span class="label">kg</span>
         </div>
         <input id="memo" class="field memo" type="text" maxlength="100" placeholder="メモ（任意）例：寝不足">
         <button id="submitButton" class="primary">登録する</button>
@@ -338,10 +342,7 @@
       <div class="card">
         <span id="chartSk" class="sk hidden" style="height:300px;border-radius:10px"></span>
         <div class="chart-box"><canvas id="chart"></canvas></div>
-        <div id="tempBox" class="temp-box hidden">
-          <div class="label">体温（点線は37.5℃）</div>
-          <div class="chart-box"><canvas id="tempChart"></canvas></div>
-        </div>
+        <div id="miniCharts"></div>
         <div id="chartEmpty" class="empty hidden">この期間の記録はありません</div>
         <div id="heatmap" class="hidden"></div>
       </div>
@@ -585,9 +586,9 @@
     return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : '-';
   }
 
-  // 体温の平均（小数1桁）。体温の無い記録は除く
-  function averageTemp(recs) {
-    const v = recs.map((r) => r.temp).filter((x) => x != null);
+  // 小数の任意項目（体温 temp・体重 weight）の平均（小数1桁）。記録の無いものは除く
+  function average1(recs, key) {
+    const v = recs.map((r) => r[key]).filter((x) => x != null);
     return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : '-';
   }
 
@@ -617,7 +618,7 @@
     setCat(catOf($('measuredAt').value));
     $('whenEdit').classList.add('hidden');
     $('whenToggle').textContent = '日時を変更';
-    ['sys', 'dia', 'pulse', 'temp', 'memo'].forEach((id) => { $(id).value = ''; });
+    ['sys', 'dia', 'pulse', 'temp', 'weight', 'memo'].forEach((id) => { $(id).value = ''; });
   }
 
   $('whenToggle').addEventListener('click', () => {
@@ -659,14 +660,21 @@
     if (/^\d{2}\.\d$/.test(v)) e.target.blur();
   });
 
-  // 体温の範囲（GASが古くて設定に無いときの予備の値つき）
-  const tempRange = () => config.range.temp || { min: 34, max: 42 };
+  // 体重：数字と小数点だけにする
+  $('weight').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ''); });
+
+  // 小数の任意項目の範囲（GASが古くて設定に無いときの予備の値つき）
+  const DECIMAL_FIELDS = [
+    ['temp', '体温', { min: 34, max: 42 }],
+    ['weight', '体重', { min: 20, max: 200 }],
+  ];
 
   function checkInput(input) {
-    if (input.temp !== '') {
-      const t = Number(input.temp);
-      const r = tempRange();
-      if (!isFinite(t) || t < r.min || t > r.max) return '体温は ' + r.min + '.0〜' + r.max + '.0 で入力してください';
+    for (const [key, label, fallback] of DECIMAL_FIELDS) {
+      if (input[key] === '') continue;
+      const v = Number(input[key]);
+      const r = config.range[key] || fallback;
+      if (!isFinite(v) || v < r.min || v > r.max) return label + 'は ' + r.min + '.0〜' + r.max + '.0 で入力してください';
     }
     const labels = { sys: '最高血圧', dia: '最低血圧', pulse: '脈拍' };
     for (const id of numFields) {
@@ -691,6 +699,7 @@
       dia: $('dia').value,
       pulse: $('pulse').value,
       temp: $('temp').value,
+      weight: $('weight').value,
       memo: $('memo').value,
     };
     const error = checkInput(input);
@@ -774,6 +783,7 @@
         + '<span class="val">' + r.sys + '/' + r.dia + '</span>'
         + (r.pulse ? '<span class="pl">脈 ' + r.pulse + '</span>' : '')
         + (r.temp != null ? '<span class="pl">' + r.temp.toFixed(1) + '℃</span>' : '')
+        + (r.weight != null ? '<span class="pl">' + r.weight.toFixed(1) + 'kg</span>' : '')
         + (r.memo ? '<span class="mm">' + esc(r.memo) + '</span>' : '')
         + '</li>').join('') : '<li class="label">まだ記録がありません</li>';
     } catch (e) {
@@ -867,9 +877,11 @@
     }).join('');
 
     const list = cur.filter(byCat(chartState.cat));
-    const temp = averageTemp(list);
+    const temp = average1(list, 'temp');
+    const weight = average1(list, 'weight');
     $('avgFoot').textContent = '脈拍の平均 ' + average(list.map((r) => r.pulse))
-      + (temp !== '-' ? ' ・ 体温の平均 ' + temp + '℃' : '') + ' ・ 記録 ' + list.length + '件';
+      + (temp !== '-' ? ' ・ 体温の平均 ' + temp + '℃' : '')
+      + (weight !== '-' ? ' ・ 体重の平均 ' + weight + 'kg' : '') + ' ・ 記録 ' + list.length + '件';
 
     destroyCharts();
     const view = chartState.view;
@@ -883,19 +895,23 @@
     if (view === 'week') return renderWeek(cur);
     if (!list.length) return;
 
-    chart = new Chart($('chart'), chartConfig(list, chartState.cat === 'all'));
-    // 体温の記録が1件でもあれば、血圧グラフの下に体温グラフを出す
-    if (list.some((r) => r.temp != null)) {
-      $('tempBox').classList.remove('hidden');
-      tempChart = new Chart($('tempChart'), tempChartConfig(list, chartState.cat === 'all'));
-    }
+    chart = new Chart($('chart'), chartConfig(list));
+    // 体温・体重の記録が1件でもあれば、血圧グラフの下にそれぞれの小さなグラフを出す
+    MINI_CHARTS.filter((spec) => list.some((r) => r[spec.key] != null)).forEach((spec) => {
+      const box = document.createElement('div');
+      box.className = 'mini-box';
+      box.innerHTML = '<div class="label">' + spec.title + '</div><div class="chart-box"><canvas></canvas></div>';
+      $('miniCharts').appendChild(box);
+      miniCharts.push(new Chart(box.querySelector('canvas'), miniChartConfig(list, spec)));
+    });
   }
 
-  let tempChart = null;
+  let miniCharts = [];
   function destroyCharts() {
     if (chart) { chart.destroy(); chart = null; }
-    if (tempChart) { tempChart.destroy(); tempChart = null; }
-    $('tempBox').classList.add('hidden');
+    miniCharts.forEach((c) => c.destroy());
+    miniCharts = [];
+    $('miniCharts').innerHTML = '';
   }
 
   // ===== ヒートマップ =====
@@ -911,9 +927,11 @@
   function slotText(recs) {
     if (!recs.length) return '—';
     const pulse = average(recs.map((r) => r.pulse));
-    const temp = averageTemp(recs);
+    const temp = average1(recs, 'temp');
+    const weight = average1(recs, 'weight');
     return average(recs.map((r) => r.sys)) + '/' + average(recs.map((r) => r.dia))
-      + (pulse !== '-' ? ' (' + pulse + ')' : '') + (temp !== '-' ? ' ' + temp + '℃' : '') + (recs.length > 1 ? '※' : '');
+      + (pulse !== '-' ? ' (' + pulse + ')' : '') + (temp !== '-' ? ' ' + temp + '℃' : '')
+      + (weight !== '-' ? ' ' + weight + 'kg' : '') + (recs.length > 1 ? '※' : '');
   }
 
   // カレンダー：1マス＝1日。色はその日でいちばん高い判定、点線は記録なし
@@ -998,38 +1016,47 @@
     },
   };
 
-  // 血圧と体温のグラフで縦軸の幅をそろえ、上下で日付の位置が合うようにする
+  // 血圧と体温・体重のグラフで縦軸の幅をそろえ、上下で日付の位置が合うようにする
   const fixAxisWidth = (scale) => { scale.width = 44; };
   const fixXPadding = (scale) => { scale.paddingLeft = 0; scale.paddingRight = 8; };
-  const TEMP_LINE = 37.5;
 
-  // 体温グラフの設定（グラフタブとレポートで共通）。横軸は血圧グラフと同じ並び
-  function tempChartConfig(list, withCat) {
+  // 血圧グラフの下に出す小さなグラフ。line は点線を引く値、min / max は縦軸の目安（省略時はデータに合わせる）
+  const MINI_CHARTS = [
+    { key: 'temp', label: '体温', unit: '℃', line: 37.5, min: 35.5, max: 38, title: '体温（点線は37.5℃）' },
+    { key: 'weight', label: '体重', unit: 'kg', title: '体重' },
+  ];
+
+  // 小さなグラフの設定（グラフタブとレポートで共通）。横軸は血圧グラフと同じ並び
+  function miniChartConfig(list, spec) {
     const css = getComputedStyle(document.documentElement);
     const color = (name) => css.getPropertyValue('--' + name).trim();
+    const values = list.map((r) => (r[spec.key] != null ? r[spec.key] : null));
+    const present = values.filter((v) => v != null);
+    const datasets = [{
+      label: spec.label, data: values, borderColor: color(spec.key), backgroundColor: color(spec.key),
+      borderWidth: 2, pointRadius: list.length > 40 ? 2 : 3, tension: 0.3, spanGaps: true,
+    }];
+    if (spec.line) {
+      datasets.push({
+        label: spec.line + spec.unit, data: list.map(() => spec.line), borderColor: color(spec.key),
+        borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0,
+      });
+    }
     return {
       type: 'line',
-      data: {
-        labels: list.map((r) => r.dt.slice(5, 10) + (withCat ? r.cat : '')),
-        datasets: [
-          {
-            label: '体温', data: list.map((r) => (r.temp != null ? r.temp : null)), borderColor: color('temp'), backgroundColor: color('temp'),
-            borderWidth: 2, pointRadius: list.length > 40 ? 2 : 3, tension: 0.3, spanGaps: true,
-          },
-          {
-            label: TEMP_LINE + '℃', data: list.map(() => TEMP_LINE), borderColor: color('temp'),
-            borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0,
-          },
-        ],
-      },
+      data: { labels: list.map((r) => r.dt.slice(5, 10)), datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
         interaction: { mode: 'index', intersect: false },
         scales: {
-          y: { suggestedMin: 35.5, suggestedMax: 38, afterFit: fixAxisWidth, grid: { color: color('line') }, ticks: { color: color('sub'), maxTicksLimit: 5, callback: (v) => v.toFixed(1) } },
-          x: { grid: { display: false }, afterFit: fixXPadding, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, align: 'inner', color: color('sub') } },
+          y: {
+            suggestedMin: spec.min != null ? spec.min : Math.floor(Math.min(...present) - 1),
+            suggestedMax: spec.max != null ? spec.max : Math.ceil(Math.max(...present) + 1),
+            afterFit: fixAxisWidth, grid: { color: color('line') }, ticks: { color: color('sub'), maxTicksLimit: 5, callback: (v) => v.toFixed(1) },
+          },
+          x: { grid: { display: false }, afterFit: fixXPadding, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 5, autoSkipPadding: 12, align: 'inner', color: color('sub') } },
         },
         plugins: {
           legend: { display: false },
@@ -1037,7 +1064,7 @@
             filter: (item) => item.datasetIndex === 0 && item.parsed.y != null,
             callbacks: {
               title: (items) => list[items[0].dataIndex].dt + ' ' + list[items[0].dataIndex].cat,
-              label: (item) => '体温 ' + item.parsed.y.toFixed(1) + '℃',
+              label: (item) => spec.label + ' ' + item.parsed.y.toFixed(1) + spec.unit,
             },
           },
         },
@@ -1045,8 +1072,8 @@
     };
   }
 
-  // グラフの設定（グラフタブとレポートで共通）。withCat：横軸の日付に朝/夜を付けるか
-  function chartConfig(list, withCat) {
+  // グラフの設定（グラフタブとレポートで共通）。朝/夜は横軸に出さず、触れたときの表示で出す
+  function chartConfig(list) {
     const css = getComputedStyle(document.documentElement);
     const color = (name) => css.getPropertyValue('--' + name).trim();
     // 基準を超えた点だけ色を変えて大きくする（件数が多いときは点を小さくする）
@@ -1054,7 +1081,7 @@
     const markColor = (v, warn, danger, base) => (v >= danger ? color('danger-mark') : v >= warn ? color('warn-mark') : base);
     const markSize = (v, warn) => (v >= warn ? (dense ? 3.5 : 6) : (dense ? 0 : 3));
 
-    const labels = list.map((r) => r.dt.slice(5, 10) + (withCat ? r.cat : ''));
+    const labels = list.map((r) => r.dt.slice(5, 10));
     const line = (label, data, c, extra) => Object.assign({
       label, data, borderColor: c, backgroundColor: c, borderWidth: 2.5, pointRadius: 3, tension: 0.3, spanGaps: true,
     }, extra);
@@ -1088,7 +1115,7 @@
         interaction: { mode: 'index', intersect: false },
         scales: {
           y: { suggestedMin: 50, suggestedMax: 170, afterFit: fixAxisWidth, grid: { color: color('line') }, ticks: { color: color('sub') } },
-          x: { grid: { display: false }, afterFit: fixXPadding, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, align: 'inner', color: color('sub') } },
+          x: { grid: { display: false }, afterFit: fixXPadding, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 5, autoSkipPadding: 12, align: 'inner', color: color('sub') } },
         },
         plugins: {
           legend: { labels: { boxWidth: 12, font: { size: 11 }, color: color('sub') } },
@@ -1139,9 +1166,11 @@
     const sys = average(recs.map((r) => r.sys));
     const dia = average(recs.map((r) => r.dia));
     const pulse = average(recs.map((r) => r.pulse));
-    const temp = averageTemp(recs);
+    // 体温・体重は2行目に小さく
+    const extra = [[average1(recs, 'temp'), '℃'], [average1(recs, 'weight'), 'kg']]
+      .filter(([v]) => v !== '-').map(([v, unit]) => v + unit).join(' ');
     const text = sys + '/' + dia + (pulse !== '-' ? ' (' + pulse + ')' : '') + (recs.length > 1 ? '※' : '')
-      + (temp !== '-' ? '<br><small>' + temp + '℃</small>' : '');
+      + (extra ? '<br><small>' + extra + '</small>' : '');
     return '<td class="lv' + level(sys, dia) + '">' + text + '</td>';
   }
 
@@ -1183,7 +1212,7 @@
     });
 
     const summaryRow = (label, recs) => '<tr><th>' + label + '</th><td>' + average(recs.map((r) => r.sys)) + '</td><td>'
-      + average(recs.map((r) => r.dia)) + '</td><td>' + average(recs.map((r) => r.pulse)) + '</td><td>' + averageTemp(recs)
+      + average(recs.map((r) => r.dia)) + '</td><td>' + average(recs.map((r) => r.pulse)) + '</td><td>' + average1(recs, 'temp') + '</td><td>' + average1(recs, 'weight')
       + '</td><td>' + recs.length + '</td></tr>';
     const dayRows = days.map((key) => {
       const day = byDay[key];
@@ -1195,12 +1224,12 @@
     box.innerHTML =
       '<div class="rp-head"><b>家庭血圧記録</b><span>作成日 ' + slash(ymd(new Date())) + '（こけログ）</span></div>'
       + '<div class="rp-sub">' + esc(name) + '　' + slash(from) + '〜' + slash(to) + '（' + days.length + '日間）</div>'
-      + '<table class="rp-table"><thead><tr><th></th><th>最高</th><th>最低</th><th>脈拍</th><th>体温</th><th>回数</th></tr></thead><tbody>'
+      + '<table class="rp-table"><thead><tr><th></th><th>最高</th><th>最低</th><th>脈拍</th><th>体温</th><th>体重</th><th>回数</th></tr></thead><tbody>'
       + summaryRow('朝の平均', list.filter((r) => r.cat === '朝'))
       + summaryRow('夜の平均', list.filter((r) => r.cat === '夜'))
       + summaryRow('全体', list)
       + '</tbody></table>'
-      + '<div id="reportChart"></div><div id="reportTempChart"></div>'
+      + '<div id="reportChart"></div><div id="reportMiniCharts"></div>'
       + '<table class="rp-table"><thead><tr><th style="width:20%">日付</th><th>朝</th><th>夜</th><th style="width:24%">メモ</th></tr></thead>'
       + '<tbody>' + dayRows + '</tbody></table>'
       + '<div class="rp-note"><span class="lv1">黄</span>' + config.warn.sys + '/' + config.warn.dia + '以上　'
@@ -1208,12 +1237,14 @@
       + '（ ）内は脈拍　※は同じ時間帯に複数回測った平均　朝＝' + config.boundaryHour + '時より前</div>';
 
     if (list.length) {
-      $('reportChart').appendChild(chartImage(chartConfig(list, true), 260, '血圧の推移グラフ'));
+      $('reportChart').appendChild(chartImage(chartConfig(list), 260, '血圧の推移グラフ'));
     }
-    if (list.some((r) => r.temp != null)) {
-      $('reportTempChart').innerHTML = '<div class="rp-note">体温（点線は' + TEMP_LINE + '℃）</div>';
-      $('reportTempChart').appendChild(chartImage(tempChartConfig(list, true), 150, '体温の推移グラフ'));
-    }
+    MINI_CHARTS.filter((spec) => list.some((r) => r[spec.key] != null)).forEach((spec) => {
+      const caption = document.createElement('div');
+      caption.className = 'rp-note';
+      caption.textContent = spec.title;
+      $('reportMiniCharts').append(caption, chartImage(miniChartConfig(list, spec), 150, spec.label + 'の推移グラフ'));
+    });
     reportTitle = '血圧記録_' + name + '_' + from + '_' + to;
   }
 
