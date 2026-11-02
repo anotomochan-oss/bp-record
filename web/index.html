@@ -704,22 +704,24 @@
     });
   });
 
-  // 体温：「365」のように3桁を打ったら「36.5」にして入力を終える
-  $('temp').addEventListener('input', (e) => {
-    let v = e.target.value.replace(/[^\d.]/g, '');
-    if (/^\d{3}$/.test(v)) v = v.slice(0, 2) + '.' + v[2];
-    e.target.value = v;
-    if (/^\d{2}\.\d$/.test(v)) e.target.blur();
-  });
-
-  // 体重：数字と小数点だけにする
-  $('weight').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ''); });
-
   // 小数の任意項目の範囲（GASが古くて設定に無いときの予備の値つき）
   const DECIMAL_FIELDS = [
     ['temp', '体温', { min: 34, max: 42 }],
     ['weight', '体重', { min: 20, max: 200 }],
   ];
+
+  // 体温・体重：数字だけを打つと、最後の1桁を小数にする（365 → 36.5、625 → 62.5、1053 → 105.3）
+  // もう1桁足すと上限を超える＝打ち終わりとみなして、入力欄を抜ける
+  function autoDecimal(el, key) {
+    el.addEventListener('input', () => {
+      const d = el.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+      el.value = d.length >= 2 ? d.slice(0, -1) + '.' + d.slice(-1) : d;
+      const max = (config.range[key] || DECIMAL_FIELDS.find((f) => f[0] === key)[2]).max;
+      if (d && Number(d) > max) el.blur();
+    });
+  }
+  autoDecimal($('temp'), 'temp');
+  autoDecimal($('weight'), 'weight');
 
   function checkInput(input) {
     for (const [key, label, fallback] of DECIMAL_FIELDS) {
@@ -891,7 +893,8 @@
   $('eCatSeg').addEventListener('click', (e) => { if (e.target.dataset.cat) setEditCat(e.target.dataset.cat); });
   $('eMeasuredAt').addEventListener('change', () => setEditCat(catOf($('eMeasuredAt').value)));
   ['eSys', 'eDia', 'ePulse'].forEach((id) => $(id).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); }));
-  ['eTemp', 'eWeight'].forEach((id) => $(id).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[^\d.]/g, ''); }));
+  autoDecimal($('eTemp'), 'temp');
+  autoDecimal($('eWeight'), 'weight');
 
   function editInput() {
     const b = $('eCatSeg').querySelector('button.active');
